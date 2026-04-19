@@ -206,7 +206,17 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
                 if self.isReconnecting || self.wasBackgrounded || !self.isRunning {
                     return
                 }
-                DispatchQueue.main.async { self.onEvent?(.connectionClosed(error)) }
+                // Auto-reconnect once on unexpected socket close (server
+                // restart, network blip). Silent — no alert unless the
+                // reconnect itself fails.
+                NSLog("[GemmaVoice] WS receive failed, attempting reconnect: \(error)")
+                self.isReconnecting = true
+                self.webSocket?.cancel(with: .goingAway, reason: nil)
+                let task = self.urlSession.webSocketTask(with: self.url)
+                self.webSocket = task
+                task.resume()
+                self.isReconnecting = false
+                self.receiveLoop()
                 return
             case .success(let message):
                 self.handleIncoming(message)
