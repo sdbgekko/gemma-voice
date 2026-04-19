@@ -111,14 +111,9 @@ final class ViewModel: ObservableObject {
     }
 
     func toggleMute() {
-        switch status {
-        case .muted:
+        if status == .muted {
             startListening()
-        case .speaking_:
-            // Tapping while actively speaking = "I'm done, send it now."
-            // More discoverable than waiting the silence cutoff.
-            cutAndSend()
-        case .thinking, .playing, .listening:
+        } else {
             stopListening()
         }
     }
@@ -149,15 +144,41 @@ final class ViewModel: ObservableObject {
     }
 
     private func stopListening() {
-        // Mute = mic only. Don't touch TTS playback — Gemma's voice keeps playing.
-        // If the user muted mid-turn (.thinking or .playing), set a flag so
-        // playback's onFinish knows to stay muted instead of restarting the mic.
+        // Mute = mic only. Don't stop TTS playback. Don't throw away an
+        // utterance-in-progress — if the user was mid-speaking, cut what
+        // we have and send it. Mute is "turn off my microphone", not
+        // "cancel my sentence".
         if status == .thinking || status == .playing {
             mutedMidTurn = true
         }
+        let wasSpeaking = (status == .speaking_) && hadSpeech
         vadTimer?.invalidate(); vadTimer = nil
-        _ = recorder.stopAndProduceWAV()   // full engine stop; unmute will cold-start
-        status = .muted
+        if wasSpeaking, let wav = recorder.snapshotAndReset() {
+            // Stop mic engine but keep the utterance going out.
+            _ = recorder.stopAndProduceWAV()
+            hadSpeech = false
+            lastSpeechAt = nil
+            utteranceStartAt = nil
+            status = .muted
+            mutedMidTurn = true   // keep mute sticky once response returns
+            APIClient.shared.postVoiceTurn(audio: wav) { [weak self] result in
+                Task { @MainActor in
+                    guard let self = self else { return }
+                    if case .success(let response) = result,
+                       !response.text_you.isEmpty || !response.text_gemma.isEmpty {
+                        self.appendTurn(text: response.text_you, isGemma: false, source: nil)
+                        self.appendTurn(text: response.text_gemma, isGemma: true, source: response.source)
+                        self.playResponseAudio(urlString: response.audio_url)
+                    }
+                }
+            }
+        } else {
+            _ = recorder.stopAndProduceWAV()   // full engine stop
+            status = .muted
+        }
+        hadSpeech = false
+        lastSpeechAt = nil
+        utteranceStartAt = nil
         hadSpeech = false
         lastSpeechAt = nil
         utteranceStartAt = nil
