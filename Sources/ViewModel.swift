@@ -44,13 +44,22 @@ final class ViewModel: ObservableObject {
     private var ttsCooldownUntil: Date = Date(timeIntervalSince1970: 0)
     private var vadTimer: Timer?
     private var coastOutTimer: Timer?
+    /// Set when the user mutes during .thinking or .playing. TTS still plays,
+    /// but after it finishes we stay muted instead of resuming the mic.
+    private var mutedMidTurn = false
 
     init() {
         player.onFinish = { [weak self] in
             Task { @MainActor in
                 guard let self = self else { return }
-                NSLog("[GemmaVoice] player.onFinish status=\(self.status)")
-                // After TTS finishes, return to listening (not muted).
+                NSLog("[GemmaVoice] player.onFinish status=\(self.status) mutedMidTurn=\(self.mutedMidTurn)")
+                // If the user muted while I was thinking or playing, stay
+                // muted — don't restart the mic.
+                if self.mutedMidTurn {
+                    self.mutedMidTurn = false
+                    self.status = .muted
+                    return
+                }
                 if self.status == .playing {
                     self.hadSpeech = false
                     self.lastSpeechAt = nil
@@ -124,6 +133,7 @@ final class ViewModel: ObservableObject {
             // 60s out and onFinish never fired (guarded on status==.playing).
             // Reset it so the mic isn't silently gated after unmute.
             ttsCooldownUntil = Date(timeIntervalSince1970: 0)
+            mutedMidTurn = false
             status = .listening
             startVADTimer()
         } catch {
@@ -134,6 +144,11 @@ final class ViewModel: ObservableObject {
 
     private func stopListening() {
         // Mute = mic only. Don't touch TTS playback — Gemma's voice keeps playing.
+        // If the user muted mid-turn (.thinking or .playing), set a flag so
+        // playback's onFinish knows to stay muted instead of restarting the mic.
+        if status == .thinking || status == .playing {
+            mutedMidTurn = true
+        }
         vadTimer?.invalidate(); vadTimer = nil
         _ = recorder.stopAndProduceWAV()   // full engine stop; unmute will cold-start
         status = .muted
@@ -232,22 +247,12 @@ final class ViewModel: ObservableObject {
         APIClient.shared.postVoiceTurn(audio: wav) { [weak self] result in
             Task { @MainActor in
                 guard let self = self else { return }
-                // If the user hit mute while we were waiting on the backend,
-                // respect that: log the turn but don't play audio back and
-                // don't un-mute.
-                if self.status == .muted {
-                    if case .success(let response) = result,
-                       !response.text_you.isEmpty || !response.text_gemma.isEmpty {
-                        self.appendTurn(text: response.text_you, isGemma: false)
-                        self.appendTurn(text: response.text_gemma, isGemma: true)
-                    }
-                    return
-                }
                 switch result {
                 case .success(let response):
                     if response.text_you.isEmpty, response.text_gemma.isEmpty {
-                        // Dropped by speaker filter — silently resume listening.
-                        self.resumeListening()
+                        // Dropped by speaker filter — silently resume listening
+                        // (unless user muted while we were thinking).
+                        if self.status != .muted { self.resumeListening() }
                         return
                     }
                     self.appendTurn(text: response.text_you, isGemma: false)
@@ -255,7 +260,7 @@ final class ViewModel: ObservableObject {
                     self.playResponseAudio(urlString: response.audio_url)
                 case .failure(let error):
                     self.errorMessage = error.localizedDescription
-                    self.resumeListening()
+                    if self.status != .muted { self.resumeListening() }
                 }
             }
         }
