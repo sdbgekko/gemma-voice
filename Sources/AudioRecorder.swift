@@ -23,7 +23,7 @@ final class AudioRecorder {
         try session.setCategory(
             .playAndRecord,
             mode: .spokenAudio,
-            options: [.defaultToSpeaker, .allowBluetooth]
+            options: [.defaultToSpeaker, .allowBluetoothHFP]
         )
         try session.setActive(true, options: [])
         try? session.overrideOutputAudioPort(.speaker)
