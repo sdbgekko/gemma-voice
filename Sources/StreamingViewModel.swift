@@ -21,6 +21,10 @@ final class StreamingViewModel: ObservableObject {
     private var session: StreamingSession?
     private let endpoint: URL
     private let maxTurns = 20
+    /// User tapped mute. Stays true until they tap unmute, regardless of
+    /// playback state, so the UI doesn't flip colors while TTS plays over
+    /// a muted mic.
+    private var userMuted = false
 
     init() {
         // JMM Tailscale IP, streaming server port 9201.
@@ -41,9 +45,12 @@ final class StreamingViewModel: ObservableObject {
     }
 
     func toggleMute() {
-        if status == .muted {
-            startSession()
+        if userMuted {
+            userMuted = false
+            session?.unmute()
+            status = .listening
         } else {
+            userMuted = true
             session?.mute()
             status = .muted
         }
@@ -83,12 +90,13 @@ final class StreamingViewModel: ObservableObject {
             h.append(level)
             levelHistory = h
         case .speechStart:
+            if userMuted { break }
             if status == .listening { status = .speaking_ }
             hadSpeechFlag = true
         case .speechEnd:
+            if userMuted { break }
             status = .thinking
-        case .transcriptYou(let text, let speaker):
-            _ = speaker
+        case .transcriptYou(let text, _):
             if !text.isEmpty {
                 appendTurn(text: text, isGemma: false, source: nil)
             }
@@ -96,13 +104,20 @@ final class StreamingViewModel: ObservableObject {
             if !text.isEmpty {
                 appendTurn(text: text, isGemma: true, source: source)
             }
-            status = .playing
+            // Only flip UI to .playing if user isn't muted; mute is sticky.
+            if !userMuted { status = .playing }
         case .ttsEnd:
-            if status == .playing || status == .thinking {
+            if userMuted {
+                status = .muted
+            } else if status == .playing || status == .thinking {
                 status = .listening
             }
         case .dropped:
-            if status == .thinking { status = .listening }
+            if userMuted {
+                status = .muted
+            } else if status == .thinking {
+                status = .listening
+            }
         case .connectionClosed(let error):
             errorMessage = error.map { "Connection closed: \($0.localizedDescription)" }
                 ?? "Connection closed"

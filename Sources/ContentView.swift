@@ -5,8 +5,7 @@ struct ContentView: View {
     @EnvironmentObject var viewModel: StreamingViewModel
 
     private var backgroundImage: UIImage? {
-        guard let path = Bundle.main.path(forResource: "GoldGemma", ofType: "png") else { return nil }
-        return UIImage(contentsOfFile: path)
+        UIImage(named: "GoldGemma")
     }
 
     var body: some View {

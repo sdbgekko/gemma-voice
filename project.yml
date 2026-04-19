@@ -17,9 +17,6 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - path: Sources
-      - path: Resources/GoldGemma.png
-        buildPhase: resources
-        type: file
       - path: Resources/Assets.xcassets
         buildPhase: resources
     info:
