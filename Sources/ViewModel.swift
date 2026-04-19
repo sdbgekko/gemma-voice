@@ -111,9 +111,14 @@ final class ViewModel: ObservableObject {
     }
 
     func toggleMute() {
-        if status == .muted {
+        switch status {
+        case .muted:
             startListening()
-        } else {
+        case .speaking_:
+            // Tapping while actively speaking = "I'm done, send it now."
+            // More discoverable than waiting the silence cutoff.
+            cutAndSend()
+        case .thinking, .playing, .listening:
             stopListening()
         }
     }

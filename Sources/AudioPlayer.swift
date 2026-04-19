@@ -5,6 +5,49 @@ final class AudioPlayer: NSObject, AVAudioPlayerDelegate {
     private var player: AVAudioPlayer?
     var onFinish: (() -> Void)?
 
+    override init() {
+        super.init()
+        // Recover if an interruption (phone call, Siri, notification route
+        // change) pauses playback — otherwise AVAudioPlayer stalls silently
+        // and audioPlayerDidFinishPlaying never fires, leaving the app
+        // stuck in .playing forever.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleInterruption(_:)),
+            name: AVAudioSession.interruptionNotification, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleRouteChange(_:)),
+            name: AVAudioSession.routeChangeNotification, object: nil)
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    @objc private func handleInterruption(_ note: Notification) {
+        guard let info = note.userInfo,
+              let typeVal = info[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: typeVal) else { return }
+        if type == .began {
+            NSLog("[GemmaVoice] audio interruption began — forcing onFinish")
+            player?.stop()
+            player = nil
+            DispatchQueue.main.async { [weak self] in self?.onFinish?() }
+        }
+    }
+
+    @objc private func handleRouteChange(_ note: Notification) {
+        guard let info = note.userInfo,
+              let reasonVal = info[AVAudioSessionRouteChangeReasonKey] as? UInt,
+              let reason = AVAudioSession.RouteChangeReason(rawValue: reasonVal) else { return }
+        // Old device unavailable (e.g., Bluetooth disconnect) pauses playback.
+        if reason == .oldDeviceUnavailable {
+            NSLog("[GemmaVoice] route change: old device unavailable — forcing onFinish")
+            player?.stop()
+            player = nil
+            DispatchQueue.main.async { [weak self] in self?.onFinish?() }
+        }
+    }
+
     func play(data: Data) throws {
         try configureSession()
         player = try AVAudioPlayer(data: data)
