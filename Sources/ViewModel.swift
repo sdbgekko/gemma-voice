@@ -232,6 +232,17 @@ final class ViewModel: ObservableObject {
         APIClient.shared.postVoiceTurn(audio: wav) { [weak self] result in
             Task { @MainActor in
                 guard let self = self else { return }
+                // If the user hit mute while we were waiting on the backend,
+                // respect that: log the turn but don't play audio back and
+                // don't un-mute.
+                if self.status == .muted {
+                    if case .success(let response) = result,
+                       !response.text_you.isEmpty || !response.text_gemma.isEmpty {
+                        self.appendTurn(text: response.text_you, isGemma: false)
+                        self.appendTurn(text: response.text_gemma, isGemma: true)
+                    }
+                    return
+                }
                 switch result {
                 case .success(let response):
                     if response.text_you.isEmpty, response.text_gemma.isEmpty {
