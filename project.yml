@@ -34,7 +34,7 @@ targets:
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         UIRequiredDeviceCapabilities:
-          - armv7
+          - arm64
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.shermanbrown.gemmavoice
