@@ -14,6 +14,7 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
         case ttsEnd
         case dropped(String)
         case connectionClosed(Error?)
+        case level(Float)    // 0..1 RMS of current mic frame
     }
 
     /// Fire-and-forget callback; always invoked on main.
@@ -138,6 +139,13 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
             let frame: [Float] = Array(pcmAccumulator.prefix(chunkSize))
             pcmAccumulator.removeFirst(chunkSize)
             accumulatorLock.unlock()
+            // RMS -> 0..1 for waveform display.
+            var sumSq: Float = 0
+            for v in frame { sumSq += v * v }
+            let rms = sqrt(sumSq / Float(frame.count))
+            let level = min(1.0, rms * 4.0)
+            DispatchQueue.main.async { [weak self] in self?.onEvent?(.level(level)) }
+
             let data: Data = frame.withUnsafeBufferPointer { Data(buffer: $0) }
             webSocket?.send(.data(data)) { _ in }
             accumulatorLock.lock()

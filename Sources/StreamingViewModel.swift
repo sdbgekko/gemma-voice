@@ -76,6 +76,12 @@ final class StreamingViewModel: ObservableObject {
 
     private func handle(_ event: StreamingSession.Event) {
         switch event {
+        case .level(let level):
+            currentLevel = level
+            var h = levelHistory
+            h.removeFirst()
+            h.append(level)
+            levelHistory = h
         case .speechStart:
             if status == .listening { status = .speaking_ }
             hadSpeechFlag = true
