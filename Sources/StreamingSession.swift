@@ -67,6 +67,7 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
     @objc private func handleBackground() {
         // Note we backgrounded so handleForeground can reconnect.
         wasBackgrounded = true
+        isReconnecting = true
         webSocket?.cancel(with: .goingAway, reason: nil)
         webSocket = nil
     }
@@ -78,10 +79,12 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
         let task = urlSession.webSocketTask(with: url)
         webSocket = task
         task.resume()
+        isReconnecting = false
         receiveLoop()
     }
 
     private var wasBackgrounded = false
+    private var isReconnecting = false
 
     func start() throws {
         guard !isRunning else { return }
@@ -198,6 +201,11 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
             guard let self = self else { return }
             switch result {
             case .failure(let error):
+                // Don't fire error alert for our own cancel during
+                // backgrounding or shutdown.
+                if self.isReconnecting || self.wasBackgrounded || !self.isRunning {
+                    return
+                }
                 DispatchQueue.main.async { self.onEvent?(.connectionClosed(error)) }
                 return
             case .success(let message):
