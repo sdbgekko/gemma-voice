@@ -3,9 +3,19 @@ import UIKit
 
 struct ContentView: View {
     @EnvironmentObject var viewModel: StreamingViewModel
+    @AppStorage("appearance") private var appearance: String = "system"
+    @State private var showSettings = false
 
     private var backgroundImage: UIImage? {
         UIImage(named: "GoldGemma")
+    }
+
+    private var preferredScheme: ColorScheme? {
+        switch appearance {
+        case "light": return .light
+        case "dark":  return .dark
+        default:      return nil   // follow system
+        }
     }
 
     var body: some View {
@@ -72,13 +82,16 @@ struct ContentView: View {
                 }
             }
         }
-        .preferredColorScheme(.light)
+        .preferredColorScheme(preferredScheme)
         .onAppear { viewModel.requestMicPermission() }
         .alert("Error", isPresented: .constant(viewModel.errorMessage != nil), actions: {
             Button("OK") { viewModel.errorMessage = nil }
         }, message: {
             Text(viewModel.errorMessage ?? "")
         })
+        .sheet(isPresented: $showSettings) {
+            SettingsView(appearance: $appearance)
+        }
     }
 
     private var statusBar: some View {
@@ -90,9 +103,12 @@ struct ContentView: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
             Spacer()
-            Text("GemmaVoice")
-                .font(.caption)
-                .foregroundColor(.secondary)
+            Button(action: { showSettings = true }) {
+                Image(systemName: "gearshape")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)

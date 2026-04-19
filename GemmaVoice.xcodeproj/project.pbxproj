@@ -15,12 +15,14 @@
 		9295BE1D0CBC106F079C7CB3 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C6EEA7752462D4D77D81949 /* APIClient.swift */; };
 		9F5D5B4CBE1CF15C8E815F26 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F32BCD10426226671D4307EC /* ContentView.swift */; };
 		CD71851F1C4E9AF485D0CEBF /* StreamingSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = D742BFD46C012F4D7DAA6DB0 /* StreamingSession.swift */; };
+		DE69138449588901BE8F516B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C01C90D094D9379036D50D5 /* SettingsView.swift */; };
 		EE275C7947985C52B4CD46BB /* ViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CD6FF746303C5E6A90C5085 /* ViewModel.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		0EEB15BAD7C61FB0A6400CC8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		1C6EEA7752462D4D77D81949 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		5C01C90D094D9379036D50D5 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		9CD6FF746303C5E6A90C5085 /* ViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModel.swift; sourceTree = "<group>"; };
 		B5886E5F151902131B1C214D /* StreamingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingViewModel.swift; sourceTree = "<group>"; };
 		D4FD7C7680847FDA53221FF1 /* AudioPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlayer.swift; sourceTree = "<group>"; };
@@ -56,6 +58,7 @@
 				EE3447742665AA1F8518F0E5 /* AudioRecorder.swift */,
 				F32BCD10426226671D4307EC /* ContentView.swift */,
 				D76531DC826ED3D1FF16910B /* GemmaVoiceApp.swift */,
+				5C01C90D094D9379036D50D5 /* SettingsView.swift */,
 				D742BFD46C012F4D7DAA6DB0 /* StreamingSession.swift */,
 				B5886E5F151902131B1C214D /* StreamingViewModel.swift */,
 				9CD6FF746303C5E6A90C5085 /* ViewModel.swift */,
@@ -148,6 +151,7 @@
 				7780E917775B1C3E34F37FC9 /* AudioRecorder.swift in Sources */,
 				9F5D5B4CBE1CF15C8E815F26 /* ContentView.swift in Sources */,
 				907B993DE19F14DCB2C24206 /* GemmaVoiceApp.swift in Sources */,
+				DE69138449588901BE8F516B /* SettingsView.swift in Sources */,
 				CD71851F1C4E9AF485D0CEBF /* StreamingSession.swift in Sources */,
 				0FAE1BADB6DD3097BE0CE9FA /* StreamingViewModel.swift in Sources */,
 				EE275C7947985C52B4CD46BB /* ViewModel.swift in Sources */,
