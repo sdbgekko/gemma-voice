@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 struct ContentView: View {
-    @EnvironmentObject var viewModel: ViewModel
+    @EnvironmentObject var viewModel: StreamingViewModel
 
     private var backgroundImage: UIImage? {
         guard let path = Bundle.main.path(forResource: "GoldGemma", ofType: "png") else { return nil }
@@ -188,7 +188,7 @@ struct ContentView: View {
 }
 
 #Preview {
-    ContentView().environmentObject(ViewModel())
+    ContentView().environmentObject(StreamingViewModel())
 }
 
 struct WaveformView: View {
