@@ -113,7 +113,8 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
 
     private func handleMicBuffer(_ buffer: AVAudioPCMBuffer) {
         guard !isMuted, let converter = converter else { return }
-        let ratio = targetFormat.sampleRate / hwFormat.sampleRate
+        let sourceRate = buffer.format.sampleRate
+        let ratio = targetFormat.sampleRate / sourceRate
         let outCapacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 1024
         guard let outBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: outCapacity) else { return }
         var error: NSError?
@@ -127,15 +128,17 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
         if status == .error || error != nil { return }
         let frameCount = Int(outBuffer.frameLength)
         guard frameCount > 0, let ch = outBuffer.floatChannelData?[0] else { return }
-        let samples = Array(UnsafeBufferPointer(start: ch, count: frameCount))
+        var samples = [Float](repeating: 0, count: frameCount)
+        for i in 0..<frameCount { samples[i] = ch[i] }
         accumulatorLock.lock()
         pcmAccumulator.append(contentsOf: samples)
         // Emit full 512-sample frames.
-        while pcmAccumulator.count >= Int(frameSize) {
-            let frame = Array(pcmAccumulator.prefix(Int(frameSize)))
-            pcmAccumulator.removeFirst(Int(frameSize))
+        let chunkSize = Int(frameSize)
+        while pcmAccumulator.count >= chunkSize {
+            let frame: [Float] = Array(pcmAccumulator.prefix(chunkSize))
+            pcmAccumulator.removeFirst(chunkSize)
             accumulatorLock.unlock()
-            let data = frame.withUnsafeBufferPointer { Data(buffer: $0) }
+            let data: Data = frame.withUnsafeBufferPointer { Data(buffer: $0) }
             webSocket?.send(.data(data)) { _ in }
             accumulatorLock.lock()
         }
