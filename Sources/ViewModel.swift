@@ -34,7 +34,7 @@ final class ViewModel: ObservableObject {
     private let maxTurns = 20
 
     // VAD state.
-    private let speechGate: Float = 0.005       // RMS threshold (0..1) for "user is talking"
+    private let speechGate: Float = 0.015       // RMS threshold (0..1) for "user is talking"
     private let silenceCutoffMs: Int = 1100     // silence duration that ends an utterance
     private let minUtteranceMs: Int = 500       // drop chunks shorter than this
     private let maxUtteranceMs: Int = 30_000    // force-cut runaway utterances
