@@ -104,9 +104,11 @@ struct ContentView: View {
                 .foregroundColor(.secondary)
             Spacer()
             Button(action: { showSettings = true }) {
-                Image(systemName: "gearshape")
-                    .font(.body)
-                    .foregroundColor(.secondary)
+                Image(systemName: "gearshape.fill")
+                    .font(.title2)
+                    .foregroundColor(.primary)
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         }
