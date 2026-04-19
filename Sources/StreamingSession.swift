@@ -26,7 +26,8 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
     private var urlSession: URLSession!
     private var isRunning = false
     private var isMuted = false
-    private let targetFormat: AVAudioFormat
+    private let targetFormat: AVAudioFormat    // 16kHz mono float32 — mic upload
+    private let ttsFormat: AVAudioFormat       // 24kHz mono float32 — Kokoro PCM playback
     private var converter: AVAudioConverter?
     private let frameSize: AVAudioFrameCount = 512
     private var pcmAccumulator: [Float] = []
@@ -39,8 +40,14 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
             sampleRate: 16_000,
             channels: 1,
             interleaved: true
+        ), let tts = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 24_000,
+            channels: 1,
+            interleaved: true
         ) else { return nil }
         self.targetFormat = target
+        self.ttsFormat = tts
         super.init()
         self.urlSession = URLSession(configuration: .default, delegate: self, delegateQueue: .main)
     }
@@ -54,8 +61,10 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
         try? session.overrideOutputAudioPort(.speaker)
 
         // Output graph: player node -> main mixer -> output.
+        // PlayerNode uses 24kHz (Kokoro's PCM format) — the mainMixer resamples
+        // to the engine's output rate automatically.
         engine.attach(playerNode)
-        engine.connect(playerNode, to: engine.mainMixerNode, format: targetFormat)
+        engine.connect(playerNode, to: engine.mainMixerNode, format: ttsFormat)
 
         let input = engine.inputNode
         let hwFormat = input.outputFormat(forBus: 0)
@@ -182,10 +191,10 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
     }
 
     private func scheduleTTSChunk(_ data: Data) {
-        // Incoming: 16kHz mono int16 PCM from Kokoro.
+        // Incoming: 24kHz mono int16 PCM from Kokoro.
         let frameCount = AVAudioFrameCount(data.count / 2)
         guard frameCount > 0,
-              let buffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: frameCount) else { return }
+              let buffer = AVAudioPCMBuffer(pcmFormat: ttsFormat, frameCapacity: frameCount) else { return }
         buffer.frameLength = frameCount
         guard let channel = buffer.floatChannelData?[0] else { return }
         data.withUnsafeBytes { raw in
