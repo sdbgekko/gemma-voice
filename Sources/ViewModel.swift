@@ -6,6 +6,7 @@ struct Turn: Identifiable, Equatable {
     let id = UUID()
     let text: String
     let isGemma: Bool
+    let source: String?   // "gemma" | "claude" | "jarvis" — only set on isGemma==true
     let timestamp = Date()
 }
 
@@ -255,8 +256,8 @@ final class ViewModel: ObservableObject {
                         if self.status != .muted { self.resumeListening() }
                         return
                     }
-                    self.appendTurn(text: response.text_you, isGemma: false)
-                    self.appendTurn(text: response.text_gemma, isGemma: true)
+                    self.appendTurn(text: response.text_you, isGemma: false, source: nil)
+                    self.appendTurn(text: response.text_gemma, isGemma: true, source: response.source)
                     self.playResponseAudio(urlString: response.audio_url)
                 case .failure(let error):
                     self.errorMessage = error.localizedDescription
@@ -295,8 +296,8 @@ final class ViewModel: ObservableObject {
         startVADTimer()
     }
 
-    private func appendTurn(text: String, isGemma: Bool) {
-        transcript.append(Turn(text: text, isGemma: isGemma))
+    private func appendTurn(text: String, isGemma: Bool, source: String? = nil) {
+        transcript.append(Turn(text: text, isGemma: isGemma, source: source))
         if transcript.count > maxTurns {
             transcript.removeFirst(transcript.count - maxTurns)
         }

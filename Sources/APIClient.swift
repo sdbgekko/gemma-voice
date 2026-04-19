@@ -5,6 +5,7 @@ struct VoiceTurnResponse: Decodable {
     let text_you: String
     let text_gemma: String
     let audio_url: String
+    let source: String?   // "gemma" | "claude" | "jarvis"
 }
 
 final class APIClient {

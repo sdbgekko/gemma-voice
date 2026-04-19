@@ -129,14 +129,40 @@ struct ContentView: View {
     private func turnBubble(_ turn: Turn) -> some View {
         HStack {
             if turn.isGemma { Spacer(minLength: 40) }
-            Text(turn.text)
-                .font(.callout)
-                .padding(8)
-                .background(turn.isGemma ? Color(.systemGray5) : Color.blue.opacity(0.85))
-                .foregroundColor(turn.isGemma ? .primary : .white)
-                .cornerRadius(12)
-                .frame(maxWidth: .infinity, alignment: turn.isGemma ? .trailing : .leading)
+            VStack(alignment: turn.isGemma ? .trailing : .leading, spacing: 2) {
+                Text(turn.text)
+                    .font(.callout)
+                    .padding(8)
+                    .background(turn.isGemma ? Color(.systemGray5) : Color.blue.opacity(0.85))
+                    .foregroundColor(turn.isGemma ? .primary : .white)
+                    .cornerRadius(12)
+                if turn.isGemma, let src = turn.source {
+                    Text(sourceLabel(src))
+                        .font(.caption2)
+                        .foregroundColor(sourceColor(src))
+                        .padding(.horizontal, 6)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: turn.isGemma ? .trailing : .leading)
             if !turn.isGemma { Spacer(minLength: 40) }
+        }
+    }
+
+    private func sourceLabel(_ src: String) -> String {
+        switch src {
+        case "gemma":  return "Gemma"
+        case "claude": return "Claude API"
+        case "jarvis": return "Jarvis (fallback)"
+        default:       return src
+        }
+    }
+
+    private func sourceColor(_ src: String) -> Color {
+        switch src {
+        case "gemma":  return .green
+        case "claude": return .blue
+        case "jarvis": return .orange
+        default:       return .secondary
         }
     }
 
