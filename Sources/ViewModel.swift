@@ -120,6 +120,10 @@ final class ViewModel: ObservableObject {
             hadSpeech = false
             lastSpeechAt = nil
             utteranceStartAt = nil
+            // If the user muted during TTS playback, ttsCooldownUntil was set to
+            // 60s out and onFinish never fired (guarded on status==.playing).
+            // Reset it so the mic isn't silently gated after unmute.
+            ttsCooldownUntil = Date(timeIntervalSince1970: 0)
             status = .listening
             startVADTimer()
         } catch {
