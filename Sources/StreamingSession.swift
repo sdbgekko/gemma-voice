@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import UIKit
 
 /// Bidirectional voice session over a single WebSocket.
 /// Mic frames flow up as raw 16kHz mono float32. Control messages + TTS
@@ -51,7 +52,36 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
         self.ttsFormat = tts
         super.init()
         self.urlSession = URLSession(configuration: .default, delegate: self, delegateQueue: .main)
+        // iOS suspends backgrounded apps and silently kills the WebSocket.
+        // Reconnect when the user returns.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleForeground),
+            name: UIApplication.willEnterForegroundNotification, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleBackground),
+            name: UIApplication.didEnterBackgroundNotification, object: nil)
     }
+
+    deinit { NotificationCenter.default.removeObserver(self) }
+
+    @objc private func handleBackground() {
+        // Note we backgrounded so handleForeground can reconnect.
+        wasBackgrounded = true
+        webSocket?.cancel(with: .goingAway, reason: nil)
+        webSocket = nil
+    }
+
+    @objc private func handleForeground() {
+        guard wasBackgrounded, isRunning else { return }
+        wasBackgrounded = false
+        NSLog("[GemmaVoice] reconnecting WS after foreground")
+        let task = urlSession.webSocketTask(with: url)
+        webSocket = task
+        task.resume()
+        receiveLoop()
+    }
+
+    private var wasBackgrounded = false
 
     func start() throws {
         guard !isRunning else { return }
