@@ -52,16 +52,25 @@ final class ViewModel: ObservableObject {
                 NSLog("[GemmaVoice] player.onFinish status=\(self.status)")
                 // After TTS finishes, return to listening (not muted).
                 if self.status == .playing {
-                    self.status = .listening
-                    self.recorder.resetBuffer()
                     self.hadSpeech = false
                     self.lastSpeechAt = nil
                     self.utteranceStartAt = nil
                     // 800ms tail cooldown: mic-picked echo of my last words won't
                     // be interpreted as the start of a new user utterance.
                     self.ttsCooldownUntil = Date().addingTimeInterval(0.8)
-                    self.startVADTimer()
-                    try? self.recorder.resume()
+                    // Cold restart the recorder. Warm resume after TTS playback
+                    // has been flaky — the first utterance gets eaten while the
+                    // tap reattaches. Full stop+start costs ~100ms but is reliable.
+                    _ = self.recorder.stopAndProduceWAV()
+                    do {
+                        try self.recorder.start()
+                        self.status = .listening
+                        self.startVADTimer()
+                    } catch {
+                        NSLog("[GemmaVoice] cold-restart after TTS failed: \(error)")
+                        self.status = .muted
+                        self.errorMessage = "Mic restart failed: \(error.localizedDescription)"
+                    }
                 }
             }
         }
