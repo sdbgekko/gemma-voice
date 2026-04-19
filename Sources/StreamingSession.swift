@@ -97,6 +97,9 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
     }
 
     func mute() {
+        // Tell server to finish the in-flight utterance before going mute,
+        // so the user's mid-sentence isn't discarded.
+        sendControl(["type": "force_cut"])
         isMuted = true
         sendControl(["type": "mute"])
     }
@@ -113,7 +116,12 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
     // MARK: - Mic path
 
     private func handleMicBuffer(_ buffer: AVAudioPCMBuffer) {
-        guard !isMuted, let converter = converter else { return }
+        if isMuted {
+            // Keep the waveform rolling toward flat instead of freezing.
+            DispatchQueue.main.async { [weak self] in self?.onEvent?(.level(0)) }
+            return
+        }
+        guard let converter = converter else { return }
         let sourceRate = buffer.format.sampleRate
         let ratio = targetFormat.sampleRate / sourceRate
         let outCapacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 1024
