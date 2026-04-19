@@ -25,7 +25,8 @@ targets:
       properties:
         CFBundleDisplayName: GemmaVoice
         CFBundleShortVersionString: "0.1"
-        CFBundleVersion: "1"
+        CFBundleVersion: "6"
+        ITSAppUsesNonExemptEncryption: false
         UILaunchScreen:
           UIColorName: ""
         NSMicrophoneUsageDescription: "GemmaVoice needs the microphone to hear you."
