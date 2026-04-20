@@ -38,13 +38,33 @@ struct SettingsView: View {
                     LabeledContent("Build", value: build)
                 }
 
-                ForEach(Changelog.entries) { entry in
-                    Section("What's new: \(entry.version) · \(entry.date)") {
-                        ForEach(entry.hints, id: \.self) { hint in
-                            Text("• \(hint)")
-                                .font(.callout)
+                Section {
+                    ForEach(Changelog.entries) { entry in
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(alignment: .firstTextBaseline) {
+                                Text(entry.version)
+                                    .font(.headline)
+                                Spacer()
+                                Text(entry.date)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            ForEach(entry.hints, id: \.self) { hint in
+                                HStack(alignment: .top, spacing: 8) {
+                                    Circle()
+                                        .fill(Color.accentColor)
+                                        .frame(width: 5, height: 5)
+                                        .padding(.top, 7)
+                                    Text(hint)
+                                        .font(.callout)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
                         }
+                        .padding(.vertical, 4)
                     }
+                } header: {
+                    Text("What's new")
                 }
             }
             .navigationTitle("Settings")
