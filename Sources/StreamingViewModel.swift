@@ -25,6 +25,12 @@ final class StreamingViewModel: ObservableObject {
     /// playback state, so the UI doesn't flip colors while TTS plays over
     /// a muted mic.
     private var userMuted = false
+    /// Rolling window of recent raw RMS samples. Used to derive an
+    /// adaptive ambient floor so the waveform shows *delta above ambient*
+    /// rather than absolute level — matters in cars, on trains, anywhere
+    /// with loud-but-stationary background noise.
+    private var recentLevels: [Float] = []
+    private let recentLevelsCap = 80   // ~2.5s at 32ms/frame
 
     init() {
         // JMM Tailscale IP, streaming server port 9201.
@@ -84,10 +90,26 @@ final class StreamingViewModel: ObservableObject {
     private func handle(_ event: StreamingSession.Event) {
         switch event {
         case .level(let level):
-            currentLevel = level
+            // Rolling window.
+            recentLevels.append(level)
+            if recentLevels.count > recentLevelsCap {
+                recentLevels.removeFirst(recentLevels.count - recentLevelsCap)
+            }
+            // Ambient floor = 20th-percentile of recent samples. Robust to
+            // speech bursts (which drive the top percentiles) while tracking
+            // slowly-changing background noise like road drone.
+            let floor: Float
+            if recentLevels.count >= 20 {
+                let sorted = recentLevels.sorted()
+                floor = sorted[sorted.count / 5]
+            } else {
+                floor = 0
+            }
+            let adjusted = max(0, level - floor)
+            currentLevel = adjusted
             var h = levelHistory
             h.removeFirst()
-            h.append(level)
+            h.append(adjusted)
             levelHistory = h
         case .speechStart:
             if userMuted { break }
