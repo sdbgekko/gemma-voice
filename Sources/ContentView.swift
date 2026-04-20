@@ -135,9 +135,15 @@ struct ContentView: View {
                     endPoint: .bottom
                 )
             )
-            .onChange(of: viewModel.transcript.count) { _, _ in
-                if let last = viewModel.transcript.last {
-                    withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
+            .onChange(of: viewModel.transcript.last?.id) { _, newId in
+                // Tracking last-id, not count — the maxTurns trim keeps count
+                // pinned at 6 once the transcript fills up, so count-based
+                // onChange stops firing. Also re-fire a beat later so scroll
+                // lands after layout finishes laying out the new bubble.
+                guard let id = newId else { return }
+                withAnimation { proxy.scrollTo(id, anchor: .bottom) }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                    withAnimation { proxy.scrollTo(id, anchor: .bottom) }
                 }
             }
         }
