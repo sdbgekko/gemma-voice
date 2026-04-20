@@ -65,22 +65,17 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
     deinit { NotificationCenter.default.removeObserver(self) }
 
     @objc private func handleBackground() {
-        // Note we backgrounded so handleForeground can reconnect.
-        wasBackgrounded = true
-        isReconnecting = true
-        webSocket?.cancel(with: .goingAway, reason: nil)
-        webSocket = nil
+        // With UIBackgroundModes=audio, AVAudioEngine keeps capturing and
+        // URLSession keeps the WebSocket alive. Don't tear anything down —
+        // the mic should stay live so Sherman can keep talking while
+        // checking other apps.
+        NSLog("[GemmaVoice] backgrounded — keeping session alive (audio bg mode)")
     }
 
     @objc private func handleForeground() {
-        guard wasBackgrounded, isRunning else { return }
-        wasBackgrounded = false
-        NSLog("[GemmaVoice] reconnecting WS after foreground")
-        let task = urlSession.webSocketTask(with: url)
-        webSocket = task
-        task.resume()
-        isReconnecting = false
-        receiveLoop()
+        // Nothing to do unless the socket died for some other reason,
+        // which the receiveLoop error handler already catches.
+        NSLog("[GemmaVoice] foregrounded")
     }
 
     private var wasBackgrounded = false
