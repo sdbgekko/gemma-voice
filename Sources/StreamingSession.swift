@@ -81,13 +81,24 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
     private var wasBackgrounded = false
     private var isReconnecting = false
 
+    private func hasExternalOutputRoute(_ session: AVAudioSession) -> Bool {
+        let externalTypes: Set<AVAudioSession.Port> = [
+            .bluetoothA2DP, .bluetoothHFP, .bluetoothLE, .carAudio, .headphones, .airPlay, .usbAudio
+        ]
+        return session.currentRoute.outputs.contains { externalTypes.contains($0.portType) }
+    }
+
     func start() throws {
         guard !isRunning else { return }
         let session = AVAudioSession.sharedInstance()
+        // Accept whatever output route the user has connected (car BT, AirPods,
+        // etc.). Only fall back to the phone speaker if nothing's connected.
         try session.setCategory(.playAndRecord, mode: .spokenAudio,
-                                options: [.defaultToSpeaker, .allowBluetoothHFP])
+                                options: [.allowBluetoothHFP, .allowBluetoothA2DP])
         try session.setActive(true, options: [])
-        try? session.overrideOutputAudioPort(.speaker)
+        if !hasExternalOutputRoute(session) {
+            try? session.overrideOutputAudioPort(.speaker)
+        }
 
         // Output graph: player node -> main mixer -> output.
         // PlayerNode uses 24kHz (Kokoro's PCM format) — the mainMixer resamples
