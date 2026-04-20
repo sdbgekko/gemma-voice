@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		0FAE1BADB6DD3097BE0CE9FA /* StreamingViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5886E5F151902131B1C214D /* StreamingViewModel.swift */; };
 		1F9CE56357F6520B8C9A3C3A /* AudioPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4FD7C7680847FDA53221FF1 /* AudioPlayer.swift */; };
+		269453F879A2BD7EECE5774D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 161B6A8D1B9F353B4DBEFA99 /* Assets.xcassets */; };
 		2EAD18E84643F22940A548D8 /* Changelog.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2FFFCB18AF2902CE7DD39FB /* Changelog.swift */; };
 		4EFA05BDBF9FBEBBA99E009D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0EEB15BAD7C61FB0A6400CC8 /* Assets.xcassets */; };
 		7780E917775B1C3E34F37FC9 /* AudioRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE3447742665AA1F8518F0E5 /* AudioRecorder.swift */; };
@@ -16,23 +17,58 @@
 		9295BE1D0CBC106F079C7CB3 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C6EEA7752462D4D77D81949 /* APIClient.swift */; };
 		9D799BBE36E435F0DA767178 /* EarbackTone.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0478F1B10235AA78A91BB431 /* EarbackTone.swift */; };
 		9F5D5B4CBE1CF15C8E815F26 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F32BCD10426226671D4307EC /* ContentView.swift */; };
+		C35CD8B40BA1A403806242BD /* GemmaVoiceWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC1D0264DA93B2E2AD5E201C /* GemmaVoiceWatchApp.swift */; };
 		CD71851F1C4E9AF485D0CEBF /* StreamingSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = D742BFD46C012F4D7DAA6DB0 /* StreamingSession.swift */; };
+		D15036A95171665D0E3914E1 /* WatchBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96770E5AAD35DE9C6B709A1F /* WatchBridge.swift */; };
 		DE69138449588901BE8F516B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C01C90D094D9379036D50D5 /* SettingsView.swift */; };
 		EE275C7947985C52B4CD46BB /* ViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CD6FF746303C5E6A90C5085 /* ViewModel.swift */; };
+		F5A8421F824DD9A7DEE7A979 /* WatchContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA21D6337604B2717E05760C /* WatchContentView.swift */; };
+		FA09DA239A4E1CEBF8CE918A /* GemmaVoiceWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = F25A001141242FB0C17544B8 /* GemmaVoiceWatch.app */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		FD0C8BE63EAC45BB4F97D5BF /* WatchTranscriptModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E143184A5F68933C6867F522 /* WatchTranscriptModel.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		8006B6BAE943A26C1B06E2D4 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EFABA9F04325B6F927BD5C02 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7F5DEEF8BEC53150C4373C97;
+			remoteInfo = GemmaVoiceWatch;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		D1904BE7D6B5512A7F5CC7BF /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				FA09DA239A4E1CEBF8CE918A /* GemmaVoiceWatch.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		0478F1B10235AA78A91BB431 /* EarbackTone.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EarbackTone.swift; sourceTree = "<group>"; };
 		0EEB15BAD7C61FB0A6400CC8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		161B6A8D1B9F353B4DBEFA99 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		1C6EEA7752462D4D77D81949 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		5C01C90D094D9379036D50D5 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		96770E5AAD35DE9C6B709A1F /* WatchBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchBridge.swift; sourceTree = "<group>"; };
 		9CD6FF746303C5E6A90C5085 /* ViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModel.swift; sourceTree = "<group>"; };
 		B5886E5F151902131B1C214D /* StreamingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingViewModel.swift; sourceTree = "<group>"; };
 		D4FD7C7680847FDA53221FF1 /* AudioPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlayer.swift; sourceTree = "<group>"; };
 		D742BFD46C012F4D7DAA6DB0 /* StreamingSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingSession.swift; sourceTree = "<group>"; };
 		D76531DC826ED3D1FF16910B /* GemmaVoiceApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GemmaVoiceApp.swift; sourceTree = "<group>"; };
+		DC1D0264DA93B2E2AD5E201C /* GemmaVoiceWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GemmaVoiceWatchApp.swift; sourceTree = "<group>"; };
+		E143184A5F68933C6867F522 /* WatchTranscriptModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchTranscriptModel.swift; sourceTree = "<group>"; };
 		E2FFFCB18AF2902CE7DD39FB /* Changelog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Changelog.swift; sourceTree = "<group>"; };
+		EA21D6337604B2717E05760C /* WatchContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchContentView.swift; sourceTree = "<group>"; };
 		EE3447742665AA1F8518F0E5 /* AudioRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRecorder.swift; sourceTree = "<group>"; };
+		F25A001141242FB0C17544B8 /* GemmaVoiceWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GemmaVoiceWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F32BCD10426226671D4307EC /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		F707268D485775D2009EB7CA /* GemmaVoice.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = GemmaVoice.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -42,8 +78,17 @@
 			isa = PBXGroup;
 			children = (
 				F707268D485775D2009EB7CA /* GemmaVoice.app */,
+				F25A001141242FB0C17544B8 /* GemmaVoiceWatch.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		563D49CE3D010E2BB9D5175D /* WatchResources */ = {
+			isa = PBXGroup;
+			children = (
+				161B6A8D1B9F353B4DBEFA99 /* Assets.xcassets */,
+			);
+			path = WatchResources;
 			sourceTree = "<group>";
 		};
 		5C77778F374F2AB014CC86A6 /* Resources */ = {
@@ -52,6 +97,16 @@
 				0EEB15BAD7C61FB0A6400CC8 /* Assets.xcassets */,
 			);
 			path = Resources;
+			sourceTree = "<group>";
+		};
+		9CAA0068430696C21055EFA4 /* WatchSources */ = {
+			isa = PBXGroup;
+			children = (
+				DC1D0264DA93B2E2AD5E201C /* GemmaVoiceWatchApp.swift */,
+				EA21D6337604B2717E05760C /* WatchContentView.swift */,
+				E143184A5F68933C6867F522 /* WatchTranscriptModel.swift */,
+			);
+			path = WatchSources;
 			sourceTree = "<group>";
 		};
 		9EF8CD36A4289E750F204949 /* Sources */ = {
@@ -68,6 +123,7 @@
 				D742BFD46C012F4D7DAA6DB0 /* StreamingSession.swift */,
 				B5886E5F151902131B1C214D /* StreamingViewModel.swift */,
 				9CD6FF746303C5E6A90C5085 /* ViewModel.swift */,
+				96770E5AAD35DE9C6B709A1F /* WatchBridge.swift */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -77,6 +133,8 @@
 			children = (
 				5C77778F374F2AB014CC86A6 /* Resources */,
 				9EF8CD36A4289E750F204949 /* Sources */,
+				563D49CE3D010E2BB9D5175D /* WatchResources */,
+				9CAA0068430696C21055EFA4 /* WatchSources */,
 				2DB226F91B19526889555A02 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -84,16 +142,36 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		7F5DEEF8BEC53150C4373C97 /* GemmaVoiceWatch */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D54A0192BA277EB785EE8F1B /* Build configuration list for PBXNativeTarget "GemmaVoiceWatch" */;
+			buildPhases = (
+				C33241E5004443A378E78DAB /* Sources */,
+				045B3A28D9826AF7C49E5000 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = GemmaVoiceWatch;
+			packageProductDependencies = (
+			);
+			productName = GemmaVoiceWatch;
+			productReference = F25A001141242FB0C17544B8 /* GemmaVoiceWatch.app */;
+			productType = "com.apple.product-type.application";
+		};
 		A2EDDF74F356B2BF332D6298 /* GemmaVoice */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = A0690B943C2C30187F37AC65 /* Build configuration list for PBXNativeTarget "GemmaVoice" */;
 			buildPhases = (
 				C929182F19CA8639F7375CF2 /* Sources */,
 				8617C219A9E59E7EB35405A4 /* Resources */,
+				D1904BE7D6B5512A7F5CC7BF /* Embed Watch Content */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				BD71D6F8D20AF324EA4A380D /* PBXTargetDependency */,
 			);
 			name = GemmaVoice;
 			packageProductDependencies = (
@@ -111,6 +189,10 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					7F5DEEF8BEC53150C4373C97 = {
+						DevelopmentTeam = JKCNSW94H7;
+						ProvisioningStyle = Automatic;
+					};
 					A2EDDF74F356B2BF332D6298 = {
 						DevelopmentTeam = JKCNSW94H7;
 						ProvisioningStyle = Automatic;
@@ -132,11 +214,20 @@
 			projectRoot = "";
 			targets = (
 				A2EDDF74F356B2BF332D6298 /* GemmaVoice */,
+				7F5DEEF8BEC53150C4373C97 /* GemmaVoiceWatch */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		045B3A28D9826AF7C49E5000 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				269453F879A2BD7EECE5774D /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		8617C219A9E59E7EB35405A4 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -148,6 +239,16 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		C33241E5004443A378E78DAB /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C35CD8B40BA1A403806242BD /* GemmaVoiceWatchApp.swift in Sources */,
+				F5A8421F824DD9A7DEE7A979 /* WatchContentView.swift in Sources */,
+				FD0C8BE63EAC45BB4F97D5BF /* WatchTranscriptModel.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		C929182F19CA8639F7375CF2 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -163,10 +264,19 @@
 				CD71851F1C4E9AF485D0CEBF /* StreamingSession.swift in Sources */,
 				0FAE1BADB6DD3097BE0CE9FA /* StreamingViewModel.swift in Sources */,
 				EE275C7947985C52B4CD46BB /* ViewModel.swift in Sources */,
+				D15036A95171665D0E3914E1 /* WatchBridge.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		BD71D6F8D20AF324EA4A380D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7F5DEEF8BEC53150C4373C97 /* GemmaVoiceWatch */;
+			targetProxy = 8006B6BAE943A26C1B06E2D4 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		4A723EB215AD1CB7A0D2765C /* Debug */ = {
@@ -247,10 +357,26 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		79E73AE5BDA0EDDD9E6F3292 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				DEVELOPMENT_TEAM = JKCNSW94H7;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = WatchResources/Info.plist;
+				PRODUCT_BUNDLE_IDENTIFIER = com.shermanbrown.gemmavoice.watchkitapp;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
 			};
 			name = Debug;
 		};
@@ -305,7 +431,6 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
@@ -332,6 +457,23 @@
 			};
 			name = Release;
 		};
+		E8EF41AC85BDDDEABEA7C081 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				DEVELOPMENT_TEAM = JKCNSW94H7;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = WatchResources/Info.plist;
+				PRODUCT_BUNDLE_IDENTIFIER = com.shermanbrown.gemmavoice.watchkitapp;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -349,6 +491,15 @@
 			buildConfigurations = (
 				4A723EB215AD1CB7A0D2765C /* Debug */,
 				D17EF83965FA944A87775CDB /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		D54A0192BA277EB785EE8F1B /* Build configuration list for PBXNativeTarget "GemmaVoiceWatch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				79E73AE5BDA0EDDD9E6F3292 /* Debug */,
+				E8EF41AC85BDDDEABEA7C081 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

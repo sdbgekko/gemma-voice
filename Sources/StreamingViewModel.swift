@@ -151,9 +151,11 @@ final class StreamingViewModel: ObservableObject {
     }
 
     private func appendTurn(text: String, isGemma: Bool, source: String?) {
-        transcript.append(Turn(text: text, isGemma: isGemma, source: source))
+        let turn = Turn(text: text, isGemma: isGemma, source: source)
+        transcript.append(turn)
         if transcript.count > maxTurns {
             transcript.removeFirst(transcript.count - maxTurns)
         }
+        WatchBridge.shared.sendTurn(id: turn.id, text: text, isGemma: isGemma)
     }
 }
