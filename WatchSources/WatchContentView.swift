@@ -53,8 +53,8 @@ struct WatchContentView: View {
                 .background(
                     RoundedRectangle(cornerRadius: 8)
                         .fill(turn.isGemma
-                              ? Color(red: 0.85, green: 0.70, blue: 0.32).opacity(0.92)
-                              : Color.blue.opacity(0.92))
+                              ? Color(red: 0.85, green: 0.70, blue: 0.32).opacity(0.82)
+                              : Color.blue.opacity(0.82))
                 )
                 .foregroundStyle(Color.white)
                 .frame(maxWidth: .infinity, alignment: turn.isGemma ? .trailing : .leading)
