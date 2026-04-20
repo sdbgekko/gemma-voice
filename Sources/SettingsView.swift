@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @Binding var appearance: String
+    @AppStorage("earbackVolume") private var earbackVolume: Double = 0.5
     @Environment(\.dismiss) private var dismiss
 
     private var version: String {
@@ -21,6 +22,16 @@ struct SettingsView: View {
                         Text("Dark").tag("dark")
                     }
                     .pickerStyle(.segmented)
+                }
+                Section("Earback Tone") {
+                    HStack {
+                        Image(systemName: "speaker.fill").foregroundColor(.secondary)
+                        Slider(value: $earbackVolume, in: 0...1)
+                        Image(systemName: "speaker.wave.3.fill").foregroundColor(.secondary)
+                    }
+                    Button("Test") {
+                        EarbackTone.shared.play()
+                    }
                 }
                 Section("About") {
                     LabeledContent("Version", value: version)

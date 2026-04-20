@@ -19,6 +19,11 @@ final class EarbackTone {
     }
 
     func play() {
+        // Read live so the Settings slider takes effect without a restart.
+        let raw = UserDefaults.standard.object(forKey: "earbackVolume") as? Double
+        let vol = Float(raw ?? 0.5)
+        if vol <= 0.01 { return }  // fully muted
+        player?.volume = vol
         haptic.impactOccurred(intensity: 0.6)
         player?.currentTime = 0
         player?.play()
