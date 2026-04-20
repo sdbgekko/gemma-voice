@@ -10,7 +10,7 @@ struct WatchContentView: View {
                 Image(uiImage: img)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-                    .opacity(0.18)
+                    .opacity(0.28)
                     .padding(24)
                     .allowsHitTesting(false)
             }
@@ -53,8 +53,8 @@ struct WatchContentView: View {
                 .background(
                     RoundedRectangle(cornerRadius: 8)
                         .fill(turn.isGemma
-                              ? Color(red: 0.85, green: 0.70, blue: 0.32).opacity(0.82)
-                              : Color.blue.opacity(0.82))
+                              ? Color(red: 0.85, green: 0.70, blue: 0.32).opacity(0.72)
+                              : Color.blue.opacity(0.72))
                 )
                 .foregroundStyle(Color.white)
                 .frame(maxWidth: .infinity, alignment: turn.isGemma ? .trailing : .leading)
