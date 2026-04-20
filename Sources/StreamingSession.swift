@@ -60,6 +60,55 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
         NotificationCenter.default.addObserver(
             self, selector: #selector(handleBackground),
             name: UIApplication.didEnterBackgroundNotification, object: nil)
+        // Route changes (Bluetooth connect/disconnect, headphones plug/unplug,
+        // carplay) break the installed mic tap silently — rebuild it.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleRouteChange(_:)),
+            name: AVAudioSession.routeChangeNotification, object: nil)
+        // Configuration changes (e.g., buffer size change after a BT device
+        // renegotiates) also invalidate the mic tap.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleEngineConfigurationChange(_:)),
+            name: .AVAudioEngineConfigurationChange, object: nil)
+    }
+
+    @objc private func handleRouteChange(_ note: Notification) {
+        guard isRunning else { return }
+        guard let reasonVal = note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
+              let reason = AVAudioSession.RouteChangeReason(rawValue: reasonVal) else { return }
+        // Rebuild the mic on any meaningful route change. Skip categoryChange
+        // (that's our own setCategory at start) and unknown.
+        switch reason {
+        case .newDeviceAvailable, .oldDeviceUnavailable, .override, .routeConfigurationChange:
+            NSLog("[GemmaVoice] route change \(reasonVal) — rebuilding mic tap")
+            rebuildMicTap()
+        default:
+            break
+        }
+    }
+
+    @objc private func handleEngineConfigurationChange(_ note: Notification) {
+        guard isRunning else { return }
+        NSLog("[GemmaVoice] engine config change — rebuilding mic tap")
+        rebuildMicTap()
+    }
+
+    private func rebuildMicTap() {
+        guard isRunning, let targetFormat = Optional(self.targetFormat) else { return }
+        let input = engine.inputNode
+        input.removeTap(onBus: 0)
+        let hwFormat = input.outputFormat(forBus: 0)
+        self.converter = AVAudioConverter(from: hwFormat, to: targetFormat)
+        accumulatorLock.lock()
+        pcmAccumulator.removeAll(keepingCapacity: true)
+        accumulatorLock.unlock()
+        input.installTap(onBus: 0, bufferSize: 4096, format: hwFormat) { [weak self] buffer, _ in
+            self?.handleMicBuffer(buffer)
+        }
+        if !engine.isRunning {
+            engine.prepare()
+            try? engine.start()
+        }
     }
 
     deinit { NotificationCenter.default.removeObserver(self) }
