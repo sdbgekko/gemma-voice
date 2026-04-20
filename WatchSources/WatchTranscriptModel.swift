@@ -29,6 +29,14 @@ final class WatchTranscriptModel: NSObject, ObservableObject, WCSessionDelegate 
     }
 
     nonisolated func session(_ session: WCSession, didReceiveMessage message: [String : Any]) {
+        handleIncoming(message)
+    }
+
+    nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String : Any] = [:]) {
+        handleIncoming(userInfo)
+    }
+
+    nonisolated private func handleIncoming(_ message: [String: Any]) {
         guard let type = message["type"] as? String else { return }
         if type == "turn",
            let text = message["text"] as? String,
@@ -44,9 +52,5 @@ final class WatchTranscriptModel: NSObject, ObservableObject, WCSessionDelegate 
         } else if type == "status", let s = message["status"] as? String {
             Task { @MainActor in self.status = s }
         }
-    }
-
-    nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String : Any] = [:]) {
-        session(session, didReceiveMessage: userInfo)
     }
 }
