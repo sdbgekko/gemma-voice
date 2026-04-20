@@ -37,6 +37,15 @@ struct SettingsView: View {
                     LabeledContent("Version", value: version)
                     LabeledContent("Build", value: build)
                 }
+
+                ForEach(Changelog.entries) { entry in
+                    Section("What's new: \(entry.version) · \(entry.date)") {
+                        ForEach(entry.hints, id: \.self) { hint in
+                            Text("• \(hint)")
+                                .font(.callout)
+                        }
+                    }
+                }
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)

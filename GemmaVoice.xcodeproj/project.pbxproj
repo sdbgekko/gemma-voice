@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		0FAE1BADB6DD3097BE0CE9FA /* StreamingViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5886E5F151902131B1C214D /* StreamingViewModel.swift */; };
 		1F9CE56357F6520B8C9A3C3A /* AudioPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4FD7C7680847FDA53221FF1 /* AudioPlayer.swift */; };
+		2EAD18E84643F22940A548D8 /* Changelog.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2FFFCB18AF2902CE7DD39FB /* Changelog.swift */; };
 		4EFA05BDBF9FBEBBA99E009D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0EEB15BAD7C61FB0A6400CC8 /* Assets.xcassets */; };
 		7780E917775B1C3E34F37FC9 /* AudioRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE3447742665AA1F8518F0E5 /* AudioRecorder.swift */; };
 		907B993DE19F14DCB2C24206 /* GemmaVoiceApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D76531DC826ED3D1FF16910B /* GemmaVoiceApp.swift */; };
@@ -30,6 +31,7 @@
 		D4FD7C7680847FDA53221FF1 /* AudioPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlayer.swift; sourceTree = "<group>"; };
 		D742BFD46C012F4D7DAA6DB0 /* StreamingSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingSession.swift; sourceTree = "<group>"; };
 		D76531DC826ED3D1FF16910B /* GemmaVoiceApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GemmaVoiceApp.swift; sourceTree = "<group>"; };
+		E2FFFCB18AF2902CE7DD39FB /* Changelog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Changelog.swift; sourceTree = "<group>"; };
 		EE3447742665AA1F8518F0E5 /* AudioRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRecorder.swift; sourceTree = "<group>"; };
 		F32BCD10426226671D4307EC /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		F707268D485775D2009EB7CA /* GemmaVoice.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = GemmaVoice.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -58,6 +60,7 @@
 				1C6EEA7752462D4D77D81949 /* APIClient.swift */,
 				D4FD7C7680847FDA53221FF1 /* AudioPlayer.swift */,
 				EE3447742665AA1F8518F0E5 /* AudioRecorder.swift */,
+				E2FFFCB18AF2902CE7DD39FB /* Changelog.swift */,
 				F32BCD10426226671D4307EC /* ContentView.swift */,
 				0478F1B10235AA78A91BB431 /* EarbackTone.swift */,
 				D76531DC826ED3D1FF16910B /* GemmaVoiceApp.swift */,
@@ -152,6 +155,7 @@
 				9295BE1D0CBC106F079C7CB3 /* APIClient.swift in Sources */,
 				1F9CE56357F6520B8C9A3C3A /* AudioPlayer.swift in Sources */,
 				7780E917775B1C3E34F37FC9 /* AudioRecorder.swift in Sources */,
+				2EAD18E84643F22940A548D8 /* Changelog.swift in Sources */,
 				9F5D5B4CBE1CF15C8E815F26 /* ContentView.swift in Sources */,
 				9D799BBE36E435F0DA767178 /* EarbackTone.swift in Sources */,
 				907B993DE19F14DCB2C24206 /* GemmaVoiceApp.swift in Sources */,
