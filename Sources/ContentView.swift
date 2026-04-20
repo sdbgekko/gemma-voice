@@ -5,6 +5,10 @@ struct ContentView: View {
     @EnvironmentObject var viewModel: StreamingViewModel
     @AppStorage("appearance") private var appearance: String = "system"
     @State private var showSettings = false
+    /// Heartbeat — subtle scale pulse on the logo so Sherman can tell at a
+    /// glance that the app is alive and rendering. Freezes if the view
+    /// stops updating (connection dropped, app hung, stuck render).
+    @State private var heartbeat = false
 
     private var backgroundImage: UIImage? {
         UIImage(named: "GoldGemma")
@@ -53,6 +57,9 @@ struct ContentView: View {
                                     .resizable()
                                     .aspectRatio(contentMode: .fit)
                                     .frame(width: logoFrameWidth, height: logoFrameHeight)
+                                    .scaleEffect(heartbeat ? 1.018 : 1.0)
+                                    .animation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true),
+                                               value: heartbeat)
                             } else {
                                 Color.clear.frame(width: logoFrameWidth, height: logoFrameHeight)
                             }
@@ -83,7 +90,10 @@ struct ContentView: View {
             }
         }
         .preferredColorScheme(preferredScheme)
-        .onAppear { viewModel.requestMicPermission() }
+        .onAppear {
+            viewModel.requestMicPermission()
+            heartbeat = true
+        }
         .alert("Error", isPresented: .constant(viewModel.errorMessage != nil), actions: {
             Button("OK") { viewModel.errorMessage = nil }
         }, message: {
