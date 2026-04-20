@@ -28,6 +28,8 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         UILaunchScreen:
           UIColorName: ""
+        UIBackgroundModes:
+          - audio
         NSMicrophoneUsageDescription: "GemmaVoice needs the microphone to hear you."
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
