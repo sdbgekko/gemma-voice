@@ -95,6 +95,9 @@ final class StreamingViewModel: ObservableObject {
             hadSpeechFlag = true
         case .speechEnd:
             if userMuted { break }
+            // Audible + haptic ack: sub-200ms signal that I heard you,
+            // before the pipeline starts chewing.
+            EarbackTone.shared.play()
             status = .thinking
         case .transcriptYou(let text, _):
             if !text.isEmpty {
