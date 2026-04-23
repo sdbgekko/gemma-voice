@@ -7,7 +7,15 @@ struct Turn: Identifiable, Equatable {
     let text: String
     let isGemma: Bool
     let source: String?   // "gemma" | "claude" | "jarvis" — only set on isGemma==true
+    let speaker: String?  // recognized speaker name from server (nil for Gemma turns or unidentified users)
     let timestamp = Date()
+
+    init(text: String, isGemma: Bool, source: String? = nil, speaker: String? = nil) {
+        self.text = text
+        self.isGemma = isGemma
+        self.source = source
+        self.speaker = speaker
+    }
 }
 
 enum Status {

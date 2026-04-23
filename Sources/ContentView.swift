@@ -175,11 +175,33 @@ struct ContentView: View {
                         .foregroundColor(sourceColor(src))
                         .padding(.horizontal, 6)
                 }
+                Text(captionFor(turn))
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 6)
             }
             .frame(maxWidth: .infinity, alignment: turn.isGemma ? .trailing : .leading)
             if !turn.isGemma { Spacer(minLength: 40) }
         }
     }
+
+    private func captionFor(_ turn: Turn) -> String {
+        let name: String
+        if turn.isGemma {
+            name = "Gemma"
+        } else if let s = turn.speaker, !s.isEmpty {
+            name = s
+        } else {
+            name = "You"
+        }
+        return "\(name) · \(Self.timeFormatter.string(from: turn.timestamp))"
+    }
+
+    private static let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "h:mm a"
+        return f
+    }()
 
     private func sourceLabel(_ src: String) -> String {
         switch src {

@@ -121,13 +121,13 @@ final class StreamingViewModel: ObservableObject {
             // before the pipeline starts chewing.
             EarbackTone.shared.play()
             status = .thinking
-        case .transcriptYou(let text, _):
+        case .transcriptYou(let text, let speaker):
             if !text.isEmpty {
-                appendTurn(text: text, isGemma: false, source: nil)
+                appendTurn(text: text, isGemma: false, source: nil, speaker: speaker)
             }
         case .transcriptGemma(let text, let source):
             if !text.isEmpty {
-                appendTurn(text: text, isGemma: true, source: source)
+                appendTurn(text: text, isGemma: true, source: source, speaker: nil)
             }
             // Only flip UI to .playing if user isn't muted; mute is sticky.
             if !userMuted { status = .playing }
@@ -150,8 +150,8 @@ final class StreamingViewModel: ObservableObject {
         }
     }
 
-    private func appendTurn(text: String, isGemma: Bool, source: String?) {
-        let turn = Turn(text: text, isGemma: isGemma, source: source)
+    private func appendTurn(text: String, isGemma: Bool, source: String?, speaker: String? = nil) {
+        let turn = Turn(text: text, isGemma: isGemma, source: source, speaker: speaker)
         transcript.append(turn)
         if transcript.count > maxTurns {
             transcript.removeFirst(transcript.count - maxTurns)
