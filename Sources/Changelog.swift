@@ -12,6 +12,15 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.3",
+            date: "Apr 24",
+            hints: [
+                "On-device speech recognition scaffolding (SFSpeechRecognizer, on-device forced)",
+                "Settings → Transcription: toggle + permission check",
+                "Conversation-flow wiring coming in 0.2.4 — this build only ships the capability",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.2",
             date: "Apr 23",
             hints: [

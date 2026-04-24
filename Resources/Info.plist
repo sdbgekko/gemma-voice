@@ -29,6 +29,8 @@
 	</dict>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>GemmaVoice needs the microphone to hear you.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>GemmaVoice uses on-device speech recognition as a fallback when the server transcription is unreachable.</string>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>

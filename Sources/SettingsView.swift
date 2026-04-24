@@ -3,6 +3,8 @@ import SwiftUI
 struct SettingsView: View {
     @Binding var appearance: String
     @AppStorage("earbackVolume") private var earbackVolume: Double = 0.5
+    @AppStorage("onDeviceSTTFallback") private var onDeviceSTTFallback: Bool = true
+    @State private var onDeviceAuthResult: String? = nil
     @Environment(\.dismiss) private var dismiss
 
     private var version: String {
@@ -31,6 +33,24 @@ struct SettingsView: View {
                     }
                     Button("Test") {
                         EarbackTone.shared.play()
+                    }
+                }
+                Section("Transcription") {
+                    Toggle("On-device fallback", isOn: $onDeviceSTTFallback)
+                    Text("When the server transcription is unreachable, fall back to Apple's on-device speech recognition. Trades speaker verification for offline capability. Requires Speech Recognition permission.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button("Check permission") {
+                        OnDeviceSTT.shared.requestAuthorizationIfNeeded { granted in
+                            let avail = OnDeviceSTT.shared.isAvailable
+                            onDeviceAuthResult = granted
+                                ? (avail ? "Granted · on-device model ready"
+                                         : "Granted · but on-device model unavailable on this device")
+                                : "Denied — enable in iOS Settings"
+                        }
+                    }
+                    if let r = onDeviceAuthResult {
+                        Text(r).font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 Section("About") {

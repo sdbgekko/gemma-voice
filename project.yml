@@ -57,6 +57,7 @@ targets:
         UIBackgroundModes:
           - audio
         NSMicrophoneUsageDescription: "GemmaVoice needs the microphone to hear you."
+        NSSpeechRecognitionUsageDescription: "GemmaVoice uses on-device speech recognition as a fallback when the server transcription is unreachable."
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
         UISupportedInterfaceOrientations:
