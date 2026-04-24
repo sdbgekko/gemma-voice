@@ -12,6 +12,7 @@
 		269453F879A2BD7EECE5774D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 161B6A8D1B9F353B4DBEFA99 /* Assets.xcassets */; };
 		2EAD18E84643F22940A548D8 /* Changelog.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2FFFCB18AF2902CE7DD39FB /* Changelog.swift */; };
 		4EFA05BDBF9FBEBBA99E009D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0EEB15BAD7C61FB0A6400CC8 /* Assets.xcassets */; };
+		6619B870724825B2BE6E06D2 /* OnDeviceSTT.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65084D5F1C669037DFC39BB8 /* OnDeviceSTT.swift */; };
 		7780E917775B1C3E34F37FC9 /* AudioRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE3447742665AA1F8518F0E5 /* AudioRecorder.swift */; };
 		907B993DE19F14DCB2C24206 /* GemmaVoiceApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D76531DC826ED3D1FF16910B /* GemmaVoiceApp.swift */; };
 		9295BE1D0CBC106F079C7CB3 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C6EEA7752462D4D77D81949 /* APIClient.swift */; };
@@ -57,6 +58,7 @@
 		161B6A8D1B9F353B4DBEFA99 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		1C6EEA7752462D4D77D81949 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		5C01C90D094D9379036D50D5 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		65084D5F1C669037DFC39BB8 /* OnDeviceSTT.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnDeviceSTT.swift; sourceTree = "<group>"; };
 		96770E5AAD35DE9C6B709A1F /* WatchBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchBridge.swift; sourceTree = "<group>"; };
 		9CD6FF746303C5E6A90C5085 /* ViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModel.swift; sourceTree = "<group>"; };
 		B5886E5F151902131B1C214D /* StreamingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingViewModel.swift; sourceTree = "<group>"; };
@@ -119,6 +121,7 @@
 				F32BCD10426226671D4307EC /* ContentView.swift */,
 				0478F1B10235AA78A91BB431 /* EarbackTone.swift */,
 				D76531DC826ED3D1FF16910B /* GemmaVoiceApp.swift */,
+				65084D5F1C669037DFC39BB8 /* OnDeviceSTT.swift */,
 				5C01C90D094D9379036D50D5 /* SettingsView.swift */,
 				D742BFD46C012F4D7DAA6DB0 /* StreamingSession.swift */,
 				B5886E5F151902131B1C214D /* StreamingViewModel.swift */,
@@ -260,6 +263,7 @@
 				9F5D5B4CBE1CF15C8E815F26 /* ContentView.swift in Sources */,
 				9D799BBE36E435F0DA767178 /* EarbackTone.swift in Sources */,
 				907B993DE19F14DCB2C24206 /* GemmaVoiceApp.swift in Sources */,
+				6619B870724825B2BE6E06D2 /* OnDeviceSTT.swift in Sources */,
 				DE69138449588901BE8F516B /* SettingsView.swift in Sources */,
 				CD71851F1C4E9AF485D0CEBF /* StreamingSession.swift in Sources */,
 				0FAE1BADB6DD3097BE0CE9FA /* StreamingViewModel.swift in Sources */,
