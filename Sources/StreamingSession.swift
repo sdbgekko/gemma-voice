@@ -190,8 +190,8 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
     // detect user speech-over-TTS and signal an interrupt to the server.
     private var isTTSPlaying = false
     private var bargeInFrames = 0
-    private let bargeInThreshold: Float = 0.05      // RMS over the lifted mic frame
-    private let bargeInFramesToTrigger = 3          // ~96ms at 32ms per frame
+    private let bargeInThreshold: Float = 0.02      // lowered from 0.05 — was too high for normal speech in car / quiet rooms
+    private let bargeInFramesToTrigger = 2          // ~64ms at 32ms per frame (was 3 frames / 96ms)
 
     private func hasExternalOutputRoute(_ session: AVAudioSession) -> Bool {
         let externalTypes: Set<AVAudioSession.Port> = [
