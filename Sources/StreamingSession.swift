@@ -205,8 +205,12 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
         let session = AVAudioSession.sharedInstance()
         // Accept whatever output route the user has connected (car BT, AirPods,
         // etc.). Only fall back to the phone speaker if nothing's connected.
-        try session.setCategory(.playAndRecord, mode: .spokenAudio,
-                                options: [.allowBluetoothHFP, .allowBluetoothA2DP])
+        // .voiceChat mode enables iOS's built-in acoustic echo cancellation
+        // (AEC), automatic gain control, and noise suppression — critical when
+        // mic + speaker are on the same device. Replaces .spokenAudio which is
+        // tuned for long-form playback without echo concerns.
+        try session.setCategory(.playAndRecord, mode: .voiceChat,
+                                options: [.allowBluetoothHFP, .allowBluetoothA2DP, .defaultToSpeaker])
         try session.setActive(true, options: [])
         if !hasExternalOutputRoute(session) {
             try? session.overrideOutputAudioPort(.speaker)

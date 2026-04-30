@@ -12,6 +12,15 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.6",
+            date: "Apr 30",
+            hints: [
+                "Echo cancellation — switched audio session mode from spokenAudio to voiceChat, which enables iOS's built-in AEC, automatic gain control, and noise suppression",
+                "Fixes the feedback loop where Gemma's TTS was being picked back up by the mic and re-transcribed as if you said it",
+                "Speaker output now defaults to the loudspeaker (not earpiece) when no headset is connected — matches how you actually use the app",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.5",
             date: "Apr 30",
             hints: [
