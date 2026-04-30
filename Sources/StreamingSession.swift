@@ -186,6 +186,13 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
     private var wasBackgrounded = false
     private var isReconnecting = false
 
+    // Barge-in: track whether TTS is currently playing so the mic path can
+    // detect user speech-over-TTS and signal an interrupt to the server.
+    private var isTTSPlaying = false
+    private var bargeInFrames = 0
+    private let bargeInThreshold: Float = 0.05      // RMS over the lifted mic frame
+    private let bargeInFramesToTrigger = 3          // ~96ms at 32ms per frame
+
     private func hasExternalOutputRoute(_ session: AVAudioSession) -> Bool {
         let externalTypes: Set<AVAudioSession.Port> = [
             .bluetoothA2DP, .bluetoothHFP, .bluetoothLE, .carAudio, .headphones, .airPlay, .usbAudio
@@ -257,6 +264,17 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
         sendControl(["type": "force_cut"])
     }
 
+    /// Barge-in: user spoke over Gemma's TTS. Stop local playback immediately
+    /// and tell the server to flush the rest of the in-flight TTS stream.
+    private func triggerBargeIn() {
+        NSLog("[GemmaVoice] barge-in detected — interrupting TTS")
+        isTTSPlaying = false
+        bargeInFrames = 0
+        playerNode.stop()         // stops scheduled buffers
+        playerNode.reset()        // clears any queued state
+        sendControl(["type": "interrupt"])
+    }
+
     // MARK: - Mic path
 
     private func handleMicBuffer(_ buffer: AVAudioPCMBuffer) {
@@ -297,6 +315,20 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
             let rms = sqrt(sumSq / Float(frame.count))
             let level = min(1.0, rms * 4.0)
             DispatchQueue.main.async { [weak self] in self?.onEvent?(.level(level)) }
+
+            // Barge-in detector: if TTS is playing and the user speaks over it
+            // for ~96ms continuous, interrupt the in-flight TTS and let the
+            // user take the floor.
+            if isTTSPlaying {
+                if rms >= bargeInThreshold {
+                    bargeInFrames += 1
+                    if bargeInFrames >= bargeInFramesToTrigger {
+                        triggerBargeIn()
+                    }
+                } else {
+                    bargeInFrames = 0
+                }
+            }
 
             let data: Data = frame.withUnsafeBufferPointer { Data(buffer: $0) }
             webSocket?.send(.data(data)) { _ in }
@@ -358,6 +390,14 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
                     self.onEvent?(.transcriptGemma(json["text"] as? String ?? "",
                                                     source: json["source"] as? String))
                 case "tts_end":
+                    self.isTTSPlaying = false
+                    self.bargeInFrames = 0
+                    self.onEvent?(.ttsEnd)
+                case "tts_interrupted":
+                    self.isTTSPlaying = false
+                    self.bargeInFrames = 0
+                    self.playerNode.stop()
+                    self.playerNode.reset()
                     self.onEvent?(.ttsEnd)
                 case "dropped":
                     self.onEvent?(.dropped(json["reason"] as? String ?? ""))
@@ -385,6 +425,9 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
             playerNode.play()
         }
         playerNode.scheduleBuffer(buffer, completionHandler: nil)
+        // Mark TTS as actively playing so the mic loop can detect barge-in.
+        isTTSPlaying = true
+        bargeInFrames = 0
     }
 
     // MARK: - Control

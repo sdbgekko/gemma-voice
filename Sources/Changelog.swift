@@ -12,6 +12,17 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.5",
+            date: "Apr 30",
+            hints: [
+                "Barge-in! You can now talk over Gemma mid-sentence — she stops mid-word and listens.",
+                "Detection: ~96ms of speech-over-TTS triggers an interrupt. RMS threshold 0.05.",
+                "On interrupt: local audio buffer is flushed instantly + server stops streaming the rest of the reply.",
+                "Server adds tts_interrupted message so client knows the turn was cut short.",
+                "Smaller TTS chunks (32ms) for noticeably faster perceived latency.",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.4",
             date: "Apr 30",
             hints: [
