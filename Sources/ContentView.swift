@@ -14,6 +14,10 @@ struct ContentView: View {
         UIImage(named: "GoldGemma")
     }
 
+    private var mutedImage: UIImage? {
+        UIImage(named: "GoldGemmaMuted")
+    }
+
     private var preferredScheme: ColorScheme? {
         switch appearance {
         case "light": return .light
@@ -41,32 +45,33 @@ struct ContentView: View {
                     let chipScreenY = imageTopY + renderedImageHeight * 0.27
                     let chipSize: CGFloat = renderedImageHeight * 0.08
                     Button(action: { viewModel.toggleMute() }) {
-                        if let img = backgroundImage {
-                            Image(uiImage: img)
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(width: logoFrameWidth, height: logoFrameHeight)
-                                .scaleEffect(heartbeat ? 1.018 : 1.0)
-                                .animation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true),
-                                           value: heartbeat)
-                        } else {
-                            Color.clear.frame(width: logoFrameWidth, height: logoFrameHeight)
+                        // Always render the gold logo as the base; the
+                        // red-CPU variant lives on top with opacity driven
+                        // by mute state, so toggling produces a crossfade
+                        // that visually reads as "the CPU chip turns red".
+                        ZStack {
+                            if let img = backgroundImage {
+                                Image(uiImage: img)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(width: logoFrameWidth, height: logoFrameHeight)
+                            }
+                            if let muted = mutedImage {
+                                Image(uiImage: muted)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(width: logoFrameWidth, height: logoFrameHeight)
+                                    .opacity(viewModel.status == .muted ? 1.0 : 0.0)
+                                    .animation(.easeInOut(duration: 0.35),
+                                               value: viewModel.status == .muted)
+                            }
                         }
+                        .scaleEffect(heartbeat ? 1.018 : 1.0)
+                        .animation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true),
+                                   value: heartbeat)
                     }
                     .buttonStyle(.plain)
                     .position(x: logoFrameWidth / 2, y: logoCenterY)
-                    // Mute indicator: rose-gold square over the CPU chip in the
-                    // logo. Replaces the previous full-image red wash — same
-                    // visual signal, less weight, more on-brand.
-                    if viewModel.status == .muted {
-                        let roseGold = Color(red: 0.72, green: 0.43, blue: 0.47)
-                        RoundedRectangle(cornerRadius: chipSize * 0.12, style: .continuous)
-                            .fill(roseGold.opacity(0.85))
-                            .frame(width: chipSize, height: chipSize)
-                            .blendMode(.multiply)
-                            .position(x: logoFrameWidth / 2, y: chipScreenY)
-                            .allowsHitTesting(false)
-                    }
                     // Gold waveform just below the logo.
                     WaveformView(samples: viewModel.levelHistory, active: viewModel.status == .speaking_)
                         .frame(width: geo.size.width * 0.75, height: 48)
