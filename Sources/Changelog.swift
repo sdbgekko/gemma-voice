@@ -12,6 +12,15 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.12",
+            date: "Apr 30",
+            hints: [
+                "Barge-in tuning v3 — RMS threshold raised back to 0.04 and trigger window to 4 frames (~128ms)",
+                "Added 600ms grace period at the start of each TTS turn — prevents the player-warmup tail and TTS-bleed-through-mic from self-triggering an interrupt",
+                "Fixes the bug where Gemma's reply cut off after the first word",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.11",
             date: "Apr 30",
             hints: [

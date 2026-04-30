@@ -190,8 +190,14 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
     // detect user speech-over-TTS and signal an interrupt to the server.
     private var isTTSPlaying = false
     private var bargeInFrames = 0
-    private let bargeInThreshold: Float = 0.02      // lowered from 0.05 — was too high for normal speech in car / quiet rooms
-    private let bargeInFramesToTrigger = 2          // ~64ms at 32ms per frame (was 3 frames / 96ms)
+    private let bargeInThreshold: Float = 0.04      // 0.05 was too high (missed normal speech), 0.02 was too low (background noise + TTS bleed self-triggered cuts)
+    private let bargeInFramesToTrigger = 4          // ~128ms at 32ms — longer window prevents transient noise spikes from triggering
+    /// Earliest time at which barge-in detection is allowed for the current
+    /// TTS turn. We ignore detection for the first 600ms of playback so the
+    /// player can warm up and Sherman's own TTS bleeding back through the
+    /// mic doesn't self-interrupt. Reset on every new TTS turn.
+    private var bargeInArmedAt: CFAbsoluteTime = 0
+    private let bargeInGracePeriod: CFAbsoluteTime = 0.6
 
     private func hasExternalOutputRoute(_ session: AVAudioSession) -> Bool {
         let externalTypes: Set<AVAudioSession.Port> = [
@@ -332,9 +338,11 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
             DispatchQueue.main.async { [weak self] in self?.onEvent?(.level(level)) }
 
             // Barge-in detector: if TTS is playing and the user speaks over it
-            // for ~96ms continuous, interrupt the in-flight TTS and let the
-            // user take the floor.
-            if isTTSPlaying {
+            // for ~128ms continuous AFTER the grace period, interrupt the
+            // in-flight TTS. The grace period prevents the player-warmup
+            // tail and self-feedback (TTS bleeding through mic) from
+            // self-triggering an interrupt.
+            if isTTSPlaying && CFAbsoluteTimeGetCurrent() >= bargeInArmedAt {
                 if rms >= bargeInThreshold {
                     bargeInFrames += 1
                     if bargeInFrames >= bargeInFramesToTrigger {
@@ -441,6 +449,11 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
         }
         playerNode.scheduleBuffer(buffer, completionHandler: nil)
         // Mark TTS as actively playing so the mic loop can detect barge-in.
+        // First chunk of a turn arms the grace-period window so the
+        // player-warmup tail and TTS-bleed-through-mic can't self-interrupt.
+        if !isTTSPlaying {
+            bargeInArmedAt = CFAbsoluteTimeGetCurrent() + bargeInGracePeriod
+        }
         isTTSPlaying = true
         bargeInFrames = 0
     }
