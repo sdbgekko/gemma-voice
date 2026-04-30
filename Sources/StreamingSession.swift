@@ -273,13 +273,21 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
 
     /// Barge-in: user spoke over Gemma's TTS. Stop local playback immediately
     /// and tell the server to flush the rest of the in-flight TTS stream.
+    /// Must hop to main before touching playerNode — AVAudioEngine nodes are
+    /// not thread-safe, calling them from the audio thread (where this is
+    /// invoked from handleMicBuffer) crashes the app intermittently.
     private func triggerBargeIn() {
         NSLog("[GemmaVoice] barge-in detected — interrupting TTS")
         isTTSPlaying = false
         bargeInFrames = 0
-        playerNode.stop()         // stops scheduled buffers
-        playerNode.reset()        // clears any queued state
+        // Send interrupt over WS immediately (URLSessionWebSocketTask is
+        // thread-safe). Player teardown jumps to main.
         sendControl(["type": "interrupt"])
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.playerNode.stop()
+            self.playerNode.reset()
+        }
     }
 
     // MARK: - Mic path

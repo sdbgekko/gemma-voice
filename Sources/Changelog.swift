@@ -12,6 +12,14 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.9",
+            date: "Apr 30",
+            hints: [
+                "Crash fix — barge-in was calling playerNode methods from the audio thread, which AVAudioEngine doesn't allow. Moved playerNode.stop / reset to the main thread.",
+                "Should resolve the intermittent crashes seen on v0.2.5 through v0.2.8.",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.8",
             date: "Apr 30",
             hints: [
