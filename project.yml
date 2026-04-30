@@ -23,8 +23,8 @@ targets:
       path: WatchResources/Info.plist
       properties:
         CFBundleDisplayName: GemmaVoice
-        CFBundleShortVersionString: "0.2.12"
-        CFBundleVersion: "15"
+        CFBundleShortVersionString: "0.2.13"
+        CFBundleVersion: "16"
         WKApplication: true
         WKCompanionAppBundleIdentifier: com.shermanbrown.gemmavoice
     settings:
@@ -49,8 +49,8 @@ targets:
       path: Resources/Info.plist
       properties:
         CFBundleDisplayName: GemmaVoice
-        CFBundleShortVersionString: "0.2.12"
-        CFBundleVersion: "15"
+        CFBundleShortVersionString: "0.2.13"
+        CFBundleVersion: "16"
         ITSAppUsesNonExemptEncryption: false
         UILaunchScreen:
           UIColorName: ""

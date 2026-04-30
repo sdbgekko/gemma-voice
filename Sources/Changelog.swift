@@ -12,6 +12,14 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.13",
+            date: "Apr 30",
+            hints: [
+                "Barge-in is now OFF by default — cuts the self-interrupt loop where Gemma's own TTS bleeding through the mic was triggering false interrupts",
+                "Settings → Allow interrupting Gemma — toggle ON if you want to be able to cut Gemma off mid-sentence (experimental)",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.12",
             date: "Apr 30",
             hints: [
