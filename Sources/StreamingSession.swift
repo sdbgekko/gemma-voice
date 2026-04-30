@@ -205,11 +205,14 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
         let session = AVAudioSession.sharedInstance()
         // Accept whatever output route the user has connected (car BT, AirPods,
         // etc.). Only fall back to the phone speaker if nothing's connected.
-        // .voiceChat mode enables iOS's built-in acoustic echo cancellation
-        // (AEC), automatic gain control, and noise suppression — critical when
-        // mic + speaker are on the same device. Replaces .spokenAudio which is
-        // tuned for long-form playback without echo concerns.
-        try session.setCategory(.playAndRecord, mode: .voiceChat,
+        // Rolled back from .voiceChat → .spokenAudio in v0.2.8: voiceChat mode
+        // forced a hardware sample rate (typically 16kHz) that broke the
+        // playerNode→mainMixer connection (configured at 24kHz Kokoro format),
+        // resulting in silent TTS playback. Re-introducing .defaultToSpeaker
+        // so output still routes to loudspeaker without headphones. Echo
+        // cancellation (the original reason for voiceChat) is on hold until
+        // we can match the playback graph to voiceChat's preferred rate.
+        try session.setCategory(.playAndRecord, mode: .spokenAudio,
                                 options: [.allowBluetoothHFP, .allowBluetoothA2DP, .defaultToSpeaker])
         try session.setActive(true, options: [])
         if !hasExternalOutputRoute(session) {
