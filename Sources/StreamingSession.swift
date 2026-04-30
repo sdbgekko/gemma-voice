@@ -70,6 +70,35 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
         NotificationCenter.default.addObserver(
             self, selector: #selector(handleEngineConfigurationChange(_:)),
             name: .AVAudioEngineConfigurationChange, object: nil)
+        // Phone calls / Siri / other apps grabbing the audio session pause
+        // our engine; resume on .ended so we keep recording in background.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleAudioInterruption(_:)),
+            name: AVAudioSession.interruptionNotification, object: nil)
+    }
+
+    @objc private func handleAudioInterruption(_ note: Notification) {
+        guard isRunning else { return }
+        guard let info = note.userInfo,
+              let typeVal = info[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: typeVal) else { return }
+        switch type {
+        case .began:
+            NSLog("[GemmaVoice] audio interruption began (call/Siri/other app)")
+        case .ended:
+            NSLog("[GemmaVoice] audio interruption ended — re-priming session")
+            do {
+                try AVAudioSession.sharedInstance().setActive(true, options: [])
+                if !engine.isRunning {
+                    engine.prepare()
+                    try engine.start()
+                }
+                rebuildMicTap()
+            } catch {
+                NSLog("[GemmaVoice] interruption recovery failed: \(error)")
+            }
+        @unknown default: break
+        }
     }
 
     @objc private func handleRouteChange(_ note: Notification) {
@@ -114,17 +143,44 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
     deinit { NotificationCenter.default.removeObserver(self) }
 
     @objc private func handleBackground() {
-        // With UIBackgroundModes=audio, AVAudioEngine keeps capturing and
-        // URLSession keeps the WebSocket alive. Don't tear anything down —
-        // the mic should stay live so Sherman can keep talking while
-        // checking other apps.
-        NSLog("[GemmaVoice] backgrounded — keeping session alive (audio bg mode)")
+        // UIBackgroundModes=audio is necessary but not sufficient — iOS
+        // sometimes deactivates the audio session on transition. Re-assert
+        // active state and verify the engine is still running so the mic
+        // indicator stays lit and PCM frames keep flowing to the WebSocket.
+        guard isRunning else { return }
+        NSLog("[GemmaVoice] backgrounded — re-priming audio session")
+        wasBackgrounded = true
+        do {
+            try AVAudioSession.sharedInstance().setActive(true, options: [])
+        } catch {
+            NSLog("[GemmaVoice] background setActive failed: \(error)")
+        }
+        if !engine.isRunning {
+            NSLog("[GemmaVoice] engine stopped on background — restarting")
+            engine.prepare()
+            try? engine.start()
+        }
     }
 
     @objc private func handleForeground() {
-        // Nothing to do unless the socket died for some other reason,
-        // which the receiveLoop error handler already catches.
+        guard isRunning else { return }
         NSLog("[GemmaVoice] foregrounded")
+        // Route may have changed silently while backgrounded (BT reconnect,
+        // headphones plugged/unplugged). Rebuild the tap to be safe and
+        // re-prime the session so playback works immediately.
+        if wasBackgrounded {
+            wasBackgrounded = false
+            do {
+                try AVAudioSession.sharedInstance().setActive(true, options: [])
+            } catch {
+                NSLog("[GemmaVoice] foreground setActive failed: \(error)")
+            }
+            if !engine.isRunning {
+                engine.prepare()
+                try? engine.start()
+            }
+            rebuildMicTap()
+        }
     }
 
     private var wasBackgrounded = false

@@ -12,6 +12,16 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.4",
+            date: "Apr 30",
+            hints: [
+                "Background audio fix — mic indicator now stays lit when the app is backgrounded so you can keep talking while in other apps",
+                "Audio session is re-primed on background entry, foreground return, and after audio interruptions (phone calls, Siri, other apps)",
+                "AVAudioEngine restarts automatically if iOS suspends it during a transition",
+                "Server-side: Kokoro TTS now streams chunks as they're generated — first audio arrives ~100ms instead of waiting for the full render",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.3",
             date: "Apr 24",
             hints: [
