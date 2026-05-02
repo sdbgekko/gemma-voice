@@ -12,6 +12,15 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.14",
+            date: "May 2",
+            hints: [
+                "Settings → Test on-device transcription — record a short utterance and see what Apple's on-device speech model gives back, no audio leaves the phone",
+                "Verification only — the conversation flow still uses server transcription. The 'On-device fallback' toggle persists for the future fallback wire-up but doesn't change behavior yet",
+                "Use this to compare on-device accuracy against the server (Parakeet/Whisper) before committing to a fallback path",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.13",
             date: "Apr 30",
             hints: [

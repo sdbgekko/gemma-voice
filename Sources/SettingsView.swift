@@ -6,7 +6,13 @@ struct SettingsView: View {
     @AppStorage("onDeviceSTTFallback") private var onDeviceSTTFallback: Bool = true
     @AppStorage("bargeInEnabled") private var bargeInEnabled: Bool = false
     @State private var onDeviceAuthResult: String? = nil
+    @State private var sttTestState: STTTestState = .idle
+    @State private var sttTestPartial: String = ""
+    @State private var sttTestFinal: String = ""
+    @State private var sttTestError: String? = nil
     @Environment(\.dismiss) private var dismiss
+
+    private enum STTTestState { case idle, recording, transcribing, done }
 
     private var version: String {
         (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "?"
@@ -43,8 +49,8 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
                 Section("Transcription") {
-                    Toggle("On-device fallback", isOn: $onDeviceSTTFallback)
-                    Text("When the server transcription is unreachable, fall back to Apple's on-device speech recognition. Trades speaker verification for offline capability. Requires Speech Recognition permission.")
+                    Toggle("On-device fallback (not yet wired)", isOn: $onDeviceSTTFallback)
+                    Text("Setting persists for the future fallback path. Conversation flow today still uses server transcription regardless of this toggle. Use the test below to verify on-device recognition works on this device.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Button("Check permission") {
@@ -58,6 +64,30 @@ struct SettingsView: View {
                     }
                     if let r = onDeviceAuthResult {
                         Text(r).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Section("Test on-device transcription") {
+                    Text("Records from the mic and transcribes entirely on-device (no audio leaves the phone). Compare the result against what you said to gauge accuracy versus the server path.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button(action: toggleSTTTest) {
+                        HStack {
+                            Image(systemName: sttTestState == .recording ? "stop.circle.fill" : "mic.circle.fill")
+                            Text(sttTestButtonLabel)
+                        }
+                    }
+                    .disabled(sttTestState == .transcribing)
+                    if sttTestState == .recording && !sttTestPartial.isEmpty {
+                        Text(sttTestPartial).font(.callout).foregroundStyle(.secondary)
+                    }
+                    if sttTestState == .done && !sttTestFinal.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Transcript").font(.caption).foregroundStyle(.secondary)
+                            Text(sttTestFinal).font(.callout)
+                        }
+                    }
+                    if let err = sttTestError {
+                        Text(err).font(.caption).foregroundStyle(.red)
                     }
                 }
                 Section("About") {
@@ -101,6 +131,56 @@ struct SettingsView: View {
                     Button("Done") { dismiss() }
                 }
             }
+        }
+    }
+
+    private var sttTestButtonLabel: String {
+        switch sttTestState {
+        case .idle: return "Start recording"
+        case .recording: return "Stop"
+        case .transcribing: return "Transcribing…"
+        case .done: return "Test again"
+        }
+    }
+
+    private func toggleSTTTest() {
+        switch sttTestState {
+        case .idle, .done:
+            sttTestPartial = ""
+            sttTestFinal = ""
+            sttTestError = nil
+            OnDeviceSTT.shared.requestAuthorizationIfNeeded { granted in
+                guard granted else {
+                    sttTestError = "Speech Recognition not authorized — enable in iOS Settings"
+                    return
+                }
+                guard OnDeviceSTT.shared.isAvailable else {
+                    sttTestError = "On-device speech model unavailable on this device"
+                    return
+                }
+                sttTestState = .recording
+                OnDeviceSTT.shared.startLive(
+                    onPartial: { partial in
+                        Task { @MainActor in sttTestPartial = partial }
+                    },
+                    onFinal: { result in
+                        Task { @MainActor in
+                            switch result {
+                            case .success(let text):
+                                sttTestFinal = text
+                            case .failure(let err):
+                                sttTestError = String(describing: err)
+                            }
+                            sttTestState = .done
+                        }
+                    }
+                )
+            }
+        case .recording:
+            sttTestState = .transcribing
+            OnDeviceSTT.shared.stopLive()
+        case .transcribing:
+            break
         }
     }
 }
