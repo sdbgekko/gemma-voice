@@ -33,6 +33,11 @@ final class OnDeviceSTT {
     private var liveEngine: AVAudioEngine?
     private var liveRequest: SFSpeechAudioBufferRecognitionRequest?
     private var liveTask: SFSpeechRecognitionTask?
+    // Pre-test session snapshot — restored on cleanup so the conversation flow's
+    // .playAndRecord/.spokenAudio session isn't stranded by our .record/.measurement.
+    private var savedCategory: AVAudioSession.Category?
+    private var savedMode: AVAudioSession.Mode?
+    private var savedOptions: AVAudioSession.CategoryOptions = []
 
     private init() {
         // en-US covers Sherman's usage. A locale picker can come later.
@@ -152,6 +157,10 @@ final class OnDeviceSTT {
 
         do {
             let session = AVAudioSession.sharedInstance()
+            // Snapshot the conversation flow's session config so we can restore it on cleanup.
+            self.savedCategory = session.category
+            self.savedMode = session.mode
+            self.savedOptions = session.categoryOptions
             try session.setCategory(.record, mode: .measurement, options: [.duckOthers])
             try session.setActive(true, options: [])
         } catch {
@@ -220,6 +229,16 @@ final class OnDeviceSTT {
         liveEngine = nil
         liveRequest = nil
         liveTask = nil
-        try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+        // Restore the conversation flow's session config (.playAndRecord/.spokenAudio)
+        // so the user can resume talking without force-quitting. Don't deactivate —
+        // leave the session live so the conversation surface's tap can engage.
+        let session = AVAudioSession.sharedInstance()
+        if let cat = savedCategory, let mode = savedMode {
+            try? session.setCategory(cat, mode: mode, options: savedOptions)
+            try? session.setActive(true, options: [])
+        }
+        savedCategory = nil
+        savedMode = nil
+        savedOptions = []
     }
 }

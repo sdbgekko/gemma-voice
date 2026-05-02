@@ -12,6 +12,14 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.15",
+            date: "May 2",
+            hints: [
+                "Fix: using Settings → Test on-device transcription no longer strands the conversation — the audio session category is restored to .playAndRecord/.spokenAudio on cleanup so you can resume talking without force-quitting",
+                "First confirmed B1 win: on-device model correctly transcribed 'Gemma' where the server STT heard 'John'",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.14",
             date: "May 2",
             hints: [
