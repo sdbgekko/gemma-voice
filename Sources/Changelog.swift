@@ -12,6 +12,17 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.16",
+            date: "May 2",
+            hints: [
+                "On-device transcription is now the default conversation path — your phone transcribes locally and only sends the text to the server. Toggle in Settings → Transcription → Use on-device transcription (defaults ON).",
+                "Beats server STT on proper nouns Sherman tested today: Gemma, Excalibur, KPC all correct (server had transcribed Gemma as John).",
+                "New voice-turn endpoint POST /text_turn skips Whisper entirely; Kokoro reply streams back over chunked HTTP for the same TTS feel as the WebSocket path.",
+                "Light local polish on transcripts (capitalize, terminal . or ?) — no LLM call, latency stays tight.",
+                "Existing WebSocket audio path is untouched — flip the toggle OFF to fall back to it.",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.15",
             date: "May 2",
             hints: [
