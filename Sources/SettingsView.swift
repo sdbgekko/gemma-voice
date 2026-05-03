@@ -3,7 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @Binding var appearance: String
     @AppStorage("earbackVolume") private var earbackVolume: Double = 0.5
-    @AppStorage("onDeviceSTTFallback") private var onDeviceSTTFallback: Bool = true
+    @AppStorage("useOnDeviceSTT") private var useOnDeviceSTT: Bool = true
     @AppStorage("bargeInEnabled") private var bargeInEnabled: Bool = false
     @State private var onDeviceAuthResult: String? = nil
     @State private var sttTestState: STTTestState = .idle
@@ -49,8 +49,8 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
                 Section("Transcription") {
-                    Toggle("On-device fallback (not yet wired)", isOn: $onDeviceSTTFallback)
-                    Text("Setting persists for the future fallback path. Conversation flow today still uses server transcription regardless of this toggle. Use the test below to verify on-device recognition works on this device.")
+                    Toggle("Use on-device transcription", isOn: $useOnDeviceSTT)
+                    Text("When ON, the conversation flow records and transcribes on-device (no audio leaves the phone for STT), then sends the text to the server for the LLM reply. When OFF, audio streams to the server as before.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Button("Check permission") {
