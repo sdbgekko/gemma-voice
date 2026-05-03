@@ -312,18 +312,11 @@ final class OnDeviceConversationSession: NSObject {
         }
     }
 
-    /// Light post-processing — sentence-case + terminal period if missing.
-    /// No LLM call; this stays local for latency. The actual implementation
-    /// lives in TranscriptPostProcessor.swift (see commit 4); this is a
-    /// stub passthrough for the inter-commit window.
+    /// Light post-processing — sentence-case + terminal "." or "?" if
+    /// missing. No LLM call; rules live in TranscriptPostProcessor for
+    /// testability and so the rule list is in one obvious place.
     private func postProcess(_ text: String) -> String {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return "" }
-        // Capitalize first letter; append period if no terminal punctuation.
-        let firstUp = trimmed.prefix(1).uppercased() + trimmed.dropFirst()
-        let last = firstUp.last!
-        let needsPeriod = !".!?".contains(last)
-        return needsPeriod ? firstUp + "." : firstUp
+        return TranscriptPostProcessor.polish(text)
     }
 
     // MARK: - TTS playback
