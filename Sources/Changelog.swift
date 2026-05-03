@@ -20,6 +20,7 @@ enum Changelog {
                 "New voice-turn endpoint POST /text_turn skips Whisper entirely; Kokoro reply streams back over chunked HTTP for the same TTS feel as the WebSocket path.",
                 "Light local polish on transcripts (capitalize, terminal . or ?) — no LLM call, latency stays tight.",
                 "Existing WebSocket audio path is untouched — flip the toggle OFF to fall back to it.",
+                "Security hardening: /text_turn now requires an HMAC-SHA256 header signed with a shared secret (Settings → Security → Voice-turn shared secret). Closes a smoke-test spoof vector where unauthenticated POSTs could relay arbitrary text into Gemma's CLI as if Sherman had voiced it.",
             ]
         ),
         ChangelogEntry(

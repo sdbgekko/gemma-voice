@@ -15,11 +15,13 @@
 		61FF0FB62CB37DCFBB3725B3 /* TextTurnClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B37F3B1399C2FF8241D8EE53 /* TextTurnClient.swift */; };
 		6619B870724825B2BE6E06D2 /* OnDeviceSTT.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65084D5F1C669037DFC39BB8 /* OnDeviceSTT.swift */; };
 		7780E917775B1C3E34F37FC9 /* AudioRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE3447742665AA1F8518F0E5 /* AudioRecorder.swift */; };
+		78C912E5646CD8EB9EA2981F /* VoiceAuthSecret.swift in Sources */ = {isa = PBXBuildFile; fileRef = 433C994C01D5D47EFA5F99FC /* VoiceAuthSecret.swift */; };
 		8B31CF5E9C43868068B4F17E /* OnDeviceConversationSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58C0170FF31B87119E0BF6F9 /* OnDeviceConversationSession.swift */; };
 		907B993DE19F14DCB2C24206 /* GemmaVoiceApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D76531DC826ED3D1FF16910B /* GemmaVoiceApp.swift */; };
 		9295BE1D0CBC106F079C7CB3 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C6EEA7752462D4D77D81949 /* APIClient.swift */; };
 		9D799BBE36E435F0DA767178 /* EarbackTone.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0478F1B10235AA78A91BB431 /* EarbackTone.swift */; };
 		9F5D5B4CBE1CF15C8E815F26 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F32BCD10426226671D4307EC /* ContentView.swift */; };
+		B93B97F7721D991AB90B0507 /* VoiceAuthSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B015275E89C8C9573430EFFC /* VoiceAuthSetupView.swift */; };
 		C35CD8B40BA1A403806242BD /* GemmaVoiceWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC1D0264DA93B2E2AD5E201C /* GemmaVoiceWatchApp.swift */; };
 		CD71851F1C4E9AF485D0CEBF /* StreamingSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = D742BFD46C012F4D7DAA6DB0 /* StreamingSession.swift */; };
 		D15036A95171665D0E3914E1 /* WatchBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96770E5AAD35DE9C6B709A1F /* WatchBridge.swift */; };
@@ -60,12 +62,14 @@
 		0EEB15BAD7C61FB0A6400CC8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		161B6A8D1B9F353B4DBEFA99 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		1C6EEA7752462D4D77D81949 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		433C994C01D5D47EFA5F99FC /* VoiceAuthSecret.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAuthSecret.swift; sourceTree = "<group>"; };
 		58C0170FF31B87119E0BF6F9 /* OnDeviceConversationSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnDeviceConversationSession.swift; sourceTree = "<group>"; };
 		5C01C90D094D9379036D50D5 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		65084D5F1C669037DFC39BB8 /* OnDeviceSTT.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnDeviceSTT.swift; sourceTree = "<group>"; };
 		917687C6344D613AAF20EC9E /* TranscriptPostProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptPostProcessor.swift; sourceTree = "<group>"; };
 		96770E5AAD35DE9C6B709A1F /* WatchBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchBridge.swift; sourceTree = "<group>"; };
 		9CD6FF746303C5E6A90C5085 /* ViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModel.swift; sourceTree = "<group>"; };
+		B015275E89C8C9573430EFFC /* VoiceAuthSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAuthSetupView.swift; sourceTree = "<group>"; };
 		B37F3B1399C2FF8241D8EE53 /* TextTurnClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextTurnClient.swift; sourceTree = "<group>"; };
 		B5886E5F151902131B1C214D /* StreamingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingViewModel.swift; sourceTree = "<group>"; };
 		D4FD7C7680847FDA53221FF1 /* AudioPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlayer.swift; sourceTree = "<group>"; };
@@ -135,6 +139,8 @@
 				B37F3B1399C2FF8241D8EE53 /* TextTurnClient.swift */,
 				917687C6344D613AAF20EC9E /* TranscriptPostProcessor.swift */,
 				9CD6FF746303C5E6A90C5085 /* ViewModel.swift */,
+				433C994C01D5D47EFA5F99FC /* VoiceAuthSecret.swift */,
+				B015275E89C8C9573430EFFC /* VoiceAuthSetupView.swift */,
 				96770E5AAD35DE9C6B709A1F /* WatchBridge.swift */,
 			);
 			path = Sources;
@@ -280,6 +286,8 @@
 				61FF0FB62CB37DCFBB3725B3 /* TextTurnClient.swift in Sources */,
 				D9890576BB70C610741C9CCD /* TranscriptPostProcessor.swift in Sources */,
 				EE275C7947985C52B4CD46BB /* ViewModel.swift in Sources */,
+				78C912E5646CD8EB9EA2981F /* VoiceAuthSecret.swift in Sources */,
+				B93B97F7721D991AB90B0507 /* VoiceAuthSetupView.swift in Sources */,
 				D15036A95171665D0E3914E1 /* WatchBridge.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
