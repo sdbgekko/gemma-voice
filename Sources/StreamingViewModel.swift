@@ -19,6 +19,11 @@ final class StreamingViewModel: ObservableObject {
     @Published var lastSendResult: String = "-"
 
     private var session: StreamingSession?
+    private var onDeviceSession: OnDeviceConversationSession?
+    /// Snapshot of the toggle at start time — switching mid-session is
+    /// out of scope; the value here is whichever was active when the
+    /// user first granted mic permission this launch.
+    private var useOnDevice: Bool = false
     private let endpoint: URL
     private let maxTurns = 20
     /// User tapped mute. Stays true until they tap unmute, regardless of
@@ -54,19 +59,60 @@ final class StreamingViewModel: ObservableObject {
         if userMuted {
             userMuted = false
             session?.unmute()
+            onDeviceSession?.unmute()
             status = .listening
         } else {
             userMuted = true
             session?.mute()
+            onDeviceSession?.mute()
             status = .muted
         }
     }
 
     func forceSend() {
         session?.forceCut()
+        onDeviceSession?.forceCut()
     }
 
     private func startSession() {
+        // Snapshot toggle once at session start; mid-session switching is
+        // out of scope for v0.2.16. Sherman flips → taps mute/unmute or
+        // relaunches → engages the new path.
+        useOnDevice = UserDefaults.standard.bool(forKey: "useOnDeviceSTT")
+
+        if useOnDevice {
+            if onDeviceSession == nil {
+                guard let s = OnDeviceConversationSession(client: TextTurnClient()) else {
+                    errorMessage = "Could not create on-device audio session."
+                    return
+                }
+                s.onEvent = { [weak self] event in
+                    Task { @MainActor in self?.handleOnDevice(event) }
+                }
+                self.onDeviceSession = s
+            }
+            // Make sure on-device STT permission is granted before we start
+            // the engine — otherwise the first transcribe call fails late.
+            OnDeviceSTT.shared.requestAuthorizationIfNeeded { [weak self] granted in
+                guard let self = self else { return }
+                Task { @MainActor in
+                    if !granted {
+                        self.errorMessage = "Speech Recognition not authorized — enable in iOS Settings, or turn off Use on-device transcription in app Settings."
+                        return
+                    }
+                    do {
+                        try self.onDeviceSession?.start()
+                        self.onDeviceSession?.unmute()
+                        self.status = .listening
+                    } catch {
+                        self.errorMessage = "Mic error: \(error.localizedDescription)"
+                        self.status = .muted
+                    }
+                }
+            }
+            return
+        }
+
         if session == nil {
             guard let s = StreamingSession(url: endpoint) else {
                 errorMessage = "Could not create audio session."
@@ -84,6 +130,56 @@ final class StreamingViewModel: ObservableObject {
         } catch {
             errorMessage = "Mic error: \(error.localizedDescription)"
             status = .muted
+        }
+    }
+
+    /// Map OnDeviceConversationSession events onto the same UI surface as
+    /// the WebSocket path so ContentView doesn't need to know which path
+    /// is active.
+    private func handleOnDevice(_ event: OnDeviceConversationSession.Event) {
+        switch event {
+        case .level(let level):
+            // No ambient floor here yet — surface raw level. Adding the
+            // 20th-percentile ambient floor logic from the WS path is
+            // tracked for a follow-up; v0.2.16 ships with raw.
+            currentLevel = level
+            var h = levelHistory
+            h.removeFirst()
+            h.append(level)
+            levelHistory = h
+        case .speechStart:
+            if userMuted { break }
+            if status == .listening { status = .speaking_ }
+            hadSpeechFlag = true
+        case .speechEnd:
+            if userMuted { break }
+            EarbackTone.shared.play()
+            status = .thinking
+        case .transcriptYou(let text):
+            if !text.isEmpty {
+                appendTurn(text: text, isGemma: false, source: "on-device", speaker: "sherman")
+            }
+        case .transcriptGemma(let text):
+            if !text.isEmpty {
+                appendTurn(text: text, isGemma: true, source: "gemma", speaker: nil)
+            }
+            if !userMuted { status = .playing }
+        case .ttsEnd:
+            if userMuted {
+                status = .muted
+            } else if status == .playing || status == .thinking {
+                status = .listening
+            }
+        case .dropped(let reason):
+            if userMuted {
+                status = .muted
+            } else if status == .thinking {
+                status = .listening
+            }
+            errorMessage = reason.isEmpty ? nil : "Dropped: \(reason)"
+        case .sessionError(let err):
+            errorMessage = err.localizedDescription
+            status = .listening
         }
     }
 
