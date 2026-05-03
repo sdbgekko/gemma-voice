@@ -90,6 +90,26 @@ struct SettingsView: View {
                         Text(err).font(.caption).foregroundStyle(.red)
                     }
                 }
+                Section("Security") {
+                    NavigationLink {
+                        VoiceAuthSetupView()
+                    } label: {
+                        HStack {
+                            Image(systemName: "lock.shield")
+                            VStack(alignment: .leading) {
+                                Text("Voice-turn shared secret")
+                                if let masked = VoiceAuthSecret.masked() {
+                                    Text(masked).font(.caption.monospaced()).foregroundStyle(.secondary)
+                                } else {
+                                    Text("Not set — server will reject requests").font(.caption).foregroundStyle(.red)
+                                }
+                            }
+                        }
+                    }
+                    Text("Required for the on-device transcription path. Without it, /text_turn POSTs are rejected by JMM.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Section("About") {
                     LabeledContent("Version", value: version)
                     LabeledContent("Build", value: build)
