@@ -12,6 +12,13 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.20",
+            date: "May 5",
+            hints: [
+                "Fix: v0.2.19's flat 1.5s mic-suspend tail was eating Sherman's first words after a turn. Now polls playerNode.isPlaying every 100ms and releases the gate the moment playback drains. Hard cap at 2s so a stuck node can't latch the mic shut.",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.19",
             date: "May 5",
             hints: [

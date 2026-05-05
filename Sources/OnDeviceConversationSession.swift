@@ -262,14 +262,18 @@ final class OnDeviceConversationSession: NSObject {
 
     private func processUtterance(pcm: [Float]) async {
         await MainActor.run { self.isProcessing = true }
-        // v0.2.19: previously the defer fired the moment /text_turn finished
-        // streaming, but TTS chunks queued in playerNode are still playing
-        // back for 1-3s after that. Mic re-opening during playback was the
-        // echo-loop trigger. Hold isProcessing for an extra grace period
-        // sized to typical buffered playback.
+        // v0.2.20: hold isProcessing only until playerNode actually drains.
+        // v0.2.19's flat 1.5s tail was eating Sherman's first words. Poll
+        // playerNode.isPlaying every 100ms after the stream completes,
+        // release the gate as soon as it stops. Hard cap at 2s so a stuck
+        // playerNode can't latch the mic shut forever.
         defer {
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                let deadline = Date().addingTimeInterval(2.0)
+                while Date() < deadline && self.playerNode.isPlaying {
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                }
                 self.isProcessing = false
             }
         }
