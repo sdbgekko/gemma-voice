@@ -262,7 +262,17 @@ final class OnDeviceConversationSession: NSObject {
 
     private func processUtterance(pcm: [Float]) async {
         await MainActor.run { self.isProcessing = true }
-        defer { Task { @MainActor in self.isProcessing = false } }
+        // v0.2.19: previously the defer fired the moment /text_turn finished
+        // streaming, but TTS chunks queued in playerNode are still playing
+        // back for 1-3s after that. Mic re-opening during playback was the
+        // echo-loop trigger. Hold isProcessing for an extra grace period
+        // sized to typical buffered playback.
+        defer {
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                self.isProcessing = false
+            }
+        }
 
         // Wrap the float array as Data for OnDeviceSTT.
         let pcmData = pcm.withUnsafeBufferPointer { buf -> Data in

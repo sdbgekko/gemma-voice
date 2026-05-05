@@ -12,6 +12,16 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.19",
+            date: "May 5",
+            hints: [
+                "Echo loop fix without re-introducing voiceChat — gates mic-frame upload while Gemma's TTS is playing on both the WebSocket path (StreamingSession) and the on-device path (OnDeviceConversationSession).",
+                "On-device path was the worse offender: the defer that flipped isProcessing back to false fired the instant /text_turn finished streaming, but Kokoro audio queued in playerNode was still playing for another 1-3s. Mic re-opened mid-playback and self-transcribed. Now isProcessing holds for an extra 1.5s after stream completion.",
+                "Barge-in still works — RMS detection runs before the gating check.",
+                "Until iOS hardware AEC can be re-enabled cleanly, headphones still kill the echo cleanest.",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.18",
             date: "May 5",
             hints: [

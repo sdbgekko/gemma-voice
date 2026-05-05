@@ -365,8 +365,16 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
                 }
             }
 
-            let data: Data = frame.withUnsafeBufferPointer { Data(buffer: $0) }
-            webSocket?.send(.data(data)) { _ in }
+            // v0.2.19: don't ship mic frames to the server while our own
+            // TTS is playing back. With voiceChat / hardware AEC off (post
+            // v0.2.18 rollback) the speaker bleeds into the mic and the
+            // server transcribes our own voice as the user. RMS above is
+            // still computed every frame so barge-in still works locally;
+            // we just skip the upload.
+            if !isTTSPlaying {
+                let data: Data = frame.withUnsafeBufferPointer { Data(buffer: $0) }
+                webSocket?.send(.data(data)) { _ in }
+            }
             accumulatorLock.lock()
         }
         accumulatorLock.unlock()
