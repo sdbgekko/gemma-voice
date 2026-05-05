@@ -17,12 +17,14 @@ final class AudioRecorder {
         resetBuffer()
 
         let session = AVAudioSession.sharedInstance()
-        // .spokenAudio mode with .playAndRecord supports simultaneous mic capture
-        // and high-quality media-level playback. Not routed through the phone-call
-        // stream, so volume is at normal media level.
+        // .voiceChat mode enables iOS hardware AEC + AGC + noise suppression
+        // so TTS playback through the speaker doesn't get re-captured by
+        // the mic and self-transcribed (the v0.2.6→v0.2.8 rollback's
+        // original motivation, now safe to re-enable since playback resamples
+        // to the engine output rate).
         try session.setCategory(
             .playAndRecord,
-            mode: .spokenAudio,
+            mode: .voiceChat,
             options: [.defaultToSpeaker, .allowBluetoothHFP]
         )
         try session.setActive(true, options: [])

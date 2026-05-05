@@ -31,6 +31,15 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
     private let targetFormat: AVAudioFormat    // 16kHz mono float32 — mic upload
     private let ttsFormat: AVAudioFormat       // 24kHz mono float32 — Kokoro PCM playback
     private var converter: AVAudioConverter?
+    /// Resamples 24kHz Kokoro PCM to whatever format playerNode is wired
+    /// at (which mirrors the engine's output rate — 16kHz under voiceChat,
+    /// 24/48kHz under spokenAudio). Built once at start; rebuilt on engine
+    /// configuration change.
+    private var ttsResampler: AVAudioConverter?
+    /// Format playerNode is currently connected to mainMixer at. Captured
+    /// from mainMixerNode.outputFormat(forBus:0) so playback adapts to
+    /// whatever sample rate voiceChat / hardware route forces.
+    private var playerConnectionFormat: AVAudioFormat?
     private let frameSize: AVAudioFrameCount = 512
     private var pcmAccumulator: [Float] = []
     private let accumulatorLock = NSLock()
@@ -212,14 +221,12 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
         let session = AVAudioSession.sharedInstance()
         // Accept whatever output route the user has connected (car BT, AirPods,
         // etc.). Only fall back to the phone speaker if nothing's connected.
-        // Rolled back from .voiceChat → .spokenAudio in v0.2.8: voiceChat mode
-        // forced a hardware sample rate (typically 16kHz) that broke the
-        // playerNode→mainMixer connection (configured at 24kHz Kokoro format),
-        // resulting in silent TTS playback. Re-introducing .defaultToSpeaker
-        // so output still routes to loudspeaker without headphones. Echo
-        // cancellation (the original reason for voiceChat) is on hold until
-        // we can match the playback graph to voiceChat's preferred rate.
-        try session.setCategory(.playAndRecord, mode: .spokenAudio,
+        // v0.2.17: re-enabling .voiceChat for hardware AEC + AGC. The v0.2.8
+        // rollback (silent TTS playback) was caused by hardcoding the
+        // playerNode→mainMixer connection at 24kHz while voiceChat forced
+        // hw to 16kHz. Fix: connect at mainMixer's actual output format and
+        // resample Kokoro 24kHz chunks to that format in scheduleTTSChunk.
+        try session.setCategory(.playAndRecord, mode: .voiceChat,
                                 options: [.allowBluetoothHFP, .allowBluetoothA2DP, .defaultToSpeaker])
         try session.setActive(true, options: [])
         if !hasExternalOutputRoute(session) {
@@ -227,10 +234,14 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
         }
 
         // Output graph: player node -> main mixer -> output.
-        // PlayerNode uses 24kHz (Kokoro's PCM format) — the mainMixer resamples
-        // to the engine's output rate automatically.
+        // Connect at the mixer's actual output format (driven by hardware /
+        // session mode), not the Kokoro 24kHz source format. scheduleTTSChunk
+        // resamples each chunk before scheduling.
         engine.attach(playerNode)
-        engine.connect(playerNode, to: engine.mainMixerNode, format: ttsFormat)
+        let connFormat = engine.mainMixerNode.outputFormat(forBus: 0)
+        engine.connect(playerNode, to: engine.mainMixerNode, format: connFormat)
+        self.playerConnectionFormat = connFormat
+        self.ttsResampler = AVAudioConverter(from: ttsFormat, to: connFormat)
 
         let input = engine.inputNode
         let hwFormat = input.outputFormat(forBus: 0)
@@ -436,19 +447,46 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
         // Incoming: 24kHz mono int16 PCM from Kokoro.
         let frameCount = AVAudioFrameCount(data.count / 2)
         guard frameCount > 0,
-              let buffer = AVAudioPCMBuffer(pcmFormat: ttsFormat, frameCapacity: frameCount) else { return }
-        buffer.frameLength = frameCount
-        guard let channel = buffer.floatChannelData?[0] else { return }
+              let inBuffer = AVAudioPCMBuffer(pcmFormat: ttsFormat, frameCapacity: frameCount) else { return }
+        inBuffer.frameLength = frameCount
+        guard let channel = inBuffer.floatChannelData?[0] else { return }
         data.withUnsafeBytes { raw in
             let int16 = raw.bindMemory(to: Int16.self)
             for i in 0..<Int(frameCount) {
                 channel[i] = Float(int16[i]) / 32768.0
             }
         }
+        // Resample 24kHz Kokoro audio to the playerNode's connection format
+        // (engine output rate — varies with session mode and route). Without
+        // this, voiceChat's 16kHz hw lock results in silent / garbled
+        // playback (the v0.2.8 rollback).
+        let bufferToSchedule: AVAudioPCMBuffer
+        if let resampler = ttsResampler,
+           let connFormat = playerConnectionFormat,
+           connFormat.sampleRate != ttsFormat.sampleRate {
+            let ratio = connFormat.sampleRate / ttsFormat.sampleRate
+            let outCapacity = AVAudioFrameCount(Double(frameCount) * ratio) + 1024
+            guard let outBuffer = AVAudioPCMBuffer(pcmFormat: connFormat, frameCapacity: outCapacity) else { return }
+            var error: NSError?
+            var consumed = false
+            let status = resampler.convert(to: outBuffer, error: &error) { _, inputStatus in
+                if consumed { inputStatus.pointee = .noDataNow; return nil }
+                consumed = true
+                inputStatus.pointee = .haveData
+                return inBuffer
+            }
+            if status == .error || error != nil {
+                NSLog("[GemmaVoice] TTS resample failed: \(String(describing: error))")
+                return
+            }
+            bufferToSchedule = outBuffer
+        } else {
+            bufferToSchedule = inBuffer
+        }
         if !playerNode.isPlaying {
             playerNode.play()
         }
-        playerNode.scheduleBuffer(buffer, completionHandler: nil)
+        playerNode.scheduleBuffer(bufferToSchedule, completionHandler: nil)
         // Mark TTS as actively playing so the mic loop can detect barge-in.
         // First chunk of a turn arms the grace-period window so the
         // player-warmup tail and TTS-bleed-through-mic can't self-interrupt.

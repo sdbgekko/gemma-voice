@@ -44,6 +44,11 @@ final class OnDeviceConversationSession: NSObject {
     private let captureFormat: AVAudioFormat   // 16kHz mono float32 — for OnDeviceSTT
     private let ttsFormat: AVAudioFormat       // 24kHz mono float32 — Kokoro PCM playback
     private var converter: AVAudioConverter?
+    /// Resamples 24kHz Kokoro PCM to playerNode's connection format. Same
+    /// mechanism as StreamingSession — required to keep TTS audible under
+    /// .voiceChat session mode (which forces hw to 16kHz).
+    private var ttsResampler: AVAudioConverter?
+    private var playerConnectionFormat: AVAudioFormat?
 
     // VAD / utterance buffering
     private var pcmAccumulator: [Float] = []   // current utterance (16kHz f32)
@@ -101,7 +106,9 @@ final class OnDeviceConversationSession: NSObject {
         let session = AVAudioSession.sharedInstance()
         // Same category/mode as StreamingSession so the audio routes line
         // up with the rest of the app's UX (Bluetooth, speaker fallback).
-        try session.setCategory(.playAndRecord, mode: .spokenAudio,
+        // v0.2.17: .voiceChat enables hardware AEC + AGC. Playback graph
+        // adapts via ttsResampler — see scheduleTTSChunk.
+        try session.setCategory(.playAndRecord, mode: .voiceChat,
                                 options: [.allowBluetoothHFP, .allowBluetoothA2DP, .defaultToSpeaker])
         try session.setActive(true, options: [])
         if !hasExternalOutputRoute(session) {
@@ -109,7 +116,10 @@ final class OnDeviceConversationSession: NSObject {
         }
 
         engine.attach(playerNode)
-        engine.connect(playerNode, to: engine.mainMixerNode, format: ttsFormat)
+        let connFormat = engine.mainMixerNode.outputFormat(forBus: 0)
+        engine.connect(playerNode, to: engine.mainMixerNode, format: connFormat)
+        self.playerConnectionFormat = connFormat
+        self.ttsResampler = AVAudioConverter(from: ttsFormat, to: connFormat)
 
         let input = engine.inputNode
         let hwFormat = input.outputFormat(forBus: 0)
@@ -326,17 +336,40 @@ final class OnDeviceConversationSession: NSObject {
         // 24kHz mono int16 PCM via /text_turn just like the WS path.
         let frameCount = AVAudioFrameCount(data.count / 2)
         guard frameCount > 0,
-              let buffer = AVAudioPCMBuffer(pcmFormat: ttsFormat, frameCapacity: frameCount) else { return }
-        buffer.frameLength = frameCount
-        guard let channel = buffer.floatChannelData?[0] else { return }
+              let inBuffer = AVAudioPCMBuffer(pcmFormat: ttsFormat, frameCapacity: frameCount) else { return }
+        inBuffer.frameLength = frameCount
+        guard let channel = inBuffer.floatChannelData?[0] else { return }
         data.withUnsafeBytes { raw in
             let int16 = raw.bindMemory(to: Int16.self)
             for i in 0..<Int(frameCount) {
                 channel[i] = Float(int16[i]) / 32768.0
             }
         }
+        let bufferToSchedule: AVAudioPCMBuffer
+        if let resampler = ttsResampler,
+           let connFormat = playerConnectionFormat,
+           connFormat.sampleRate != ttsFormat.sampleRate {
+            let ratio = connFormat.sampleRate / ttsFormat.sampleRate
+            let outCapacity = AVAudioFrameCount(Double(frameCount) * ratio) + 1024
+            guard let outBuffer = AVAudioPCMBuffer(pcmFormat: connFormat, frameCapacity: outCapacity) else { return }
+            var error: NSError?
+            var consumed = false
+            let status = resampler.convert(to: outBuffer, error: &error) { _, inputStatus in
+                if consumed { inputStatus.pointee = .noDataNow; return nil }
+                consumed = true
+                inputStatus.pointee = .haveData
+                return inBuffer
+            }
+            if status == .error || error != nil {
+                NSLog("[GemmaVoice] TTS resample failed: \(String(describing: error))")
+                return
+            }
+            bufferToSchedule = outBuffer
+        } else {
+            bufferToSchedule = inBuffer
+        }
         if !playerNode.isPlaying { playerNode.play() }
-        playerNode.scheduleBuffer(buffer, completionHandler: nil)
+        playerNode.scheduleBuffer(bufferToSchedule, completionHandler: nil)
     }
 
     // MARK: - Helpers

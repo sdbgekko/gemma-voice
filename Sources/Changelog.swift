@@ -12,6 +12,15 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.17",
+            date: "May 5",
+            hints: [
+                "Echo cancellation is back — switched the audio session to .voiceChat mode, which enables iOS hardware AEC + AGC + noise suppression. The mic no longer re-captures Gemma's own TTS as if you said it.",
+                "Playback graph rebuilt to match voiceChat's preferred sample rate — the v0.2.8 silent-TTS regression is fixed. PlayerNode now connects at the engine's actual output rate; Kokoro 24kHz chunks are resampled per-chunk before scheduling.",
+                "If TTS sounds muffled or off-pitch on your phone after this update, that's the resampler — let Sherman know and he'll tune it.",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.16",
             date: "May 2",
             hints: [
