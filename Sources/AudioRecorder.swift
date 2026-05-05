@@ -17,14 +17,11 @@ final class AudioRecorder {
         resetBuffer()
 
         let session = AVAudioSession.sharedInstance()
-        // .voiceChat mode enables iOS hardware AEC + AGC + noise suppression
-        // so TTS playback through the speaker doesn't get re-captured by
-        // the mic and self-transcribed (the v0.2.6→v0.2.8 rollback's
-        // original motivation, now safe to re-enable since playback resamples
-        // to the engine output rate).
+        // v0.2.18: rolled back to .spokenAudio matching the conversation
+        // session paths.
         try session.setCategory(
             .playAndRecord,
-            mode: .voiceChat,
+            mode: .spokenAudio,
             options: [.defaultToSpeaker, .allowBluetoothHFP]
         )
         try session.setActive(true, options: [])

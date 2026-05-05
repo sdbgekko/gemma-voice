@@ -106,9 +106,8 @@ final class OnDeviceConversationSession: NSObject {
         let session = AVAudioSession.sharedInstance()
         // Same category/mode as StreamingSession so the audio routes line
         // up with the rest of the app's UX (Bluetooth, speaker fallback).
-        // v0.2.17: .voiceChat enables hardware AEC + AGC. Playback graph
-        // adapts via ttsResampler — see scheduleTTSChunk.
-        try session.setCategory(.playAndRecord, mode: .voiceChat,
+        // v0.2.18: rolled back to .spokenAudio matching StreamingSession.
+        try session.setCategory(.playAndRecord, mode: .spokenAudio,
                                 options: [.allowBluetoothHFP, .allowBluetoothA2DP, .defaultToSpeaker])
         try session.setActive(true, options: [])
         if !hasExternalOutputRoute(session) {

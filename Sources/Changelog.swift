@@ -12,6 +12,15 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.18",
+            date: "May 5",
+            hints: [
+                "Rolled back voiceChat audio mode after v0.2.17 silent-playback regression in the field — same failure shape as the v0.2.8 rollback, the resampler change wasn't enough on its own.",
+                "Audio session is back on .spokenAudio. Echo loop returns; mute when you're done speaking remains the workaround.",
+                "Echo cancellation will return once the voiceChat path can be tested on-device with the resampler chain (still in the codebase, just inert).",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.17",
             date: "May 5",
             hints: [

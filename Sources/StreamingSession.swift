@@ -221,12 +221,12 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
         let session = AVAudioSession.sharedInstance()
         // Accept whatever output route the user has connected (car BT, AirPods,
         // etc.). Only fall back to the phone speaker if nothing's connected.
-        // v0.2.17: re-enabling .voiceChat for hardware AEC + AGC. The v0.2.8
-        // rollback (silent TTS playback) was caused by hardcoding the
-        // playerNode→mainMixer connection at 24kHz while voiceChat forced
-        // hw to 16kHz. Fix: connect at mainMixer's actual output format and
-        // resample Kokoro 24kHz chunks to that format in scheduleTTSChunk.
-        try session.setCategory(.playAndRecord, mode: .voiceChat,
+        // v0.2.18: rolled back to .spokenAudio after v0.2.17 silent-playback
+        // regression in the field — same failure shape as the v0.2.8 rollback.
+        // Resampler infrastructure (ttsResampler / playerConnectionFormat) kept;
+        // it makes the playback graph more robust regardless of session mode.
+        // AEC will return once voiceChat + resampler can be tested on-device.
+        try session.setCategory(.playAndRecord, mode: .spokenAudio,
                                 options: [.allowBluetoothHFP, .allowBluetoothA2DP, .defaultToSpeaker])
         try session.setActive(true, options: [])
         if !hasExternalOutputRoute(session) {
