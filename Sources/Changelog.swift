@@ -12,6 +12,14 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.21",
+            date: "May 6",
+            hints: [
+                "Cold-launch crash fix: AVAudioEngine connect was reading mainMixerNode.outputFormat before the output graph materialized, getting a 0-channel format, throwing an uncatchable NSInvalidArgumentException. Now uses outputNode.inputFormat with a channelCount guard and 48kHz fallback.",
+                "Resume-from-background: re-asserts the audio session and restarts the engine on UIApplication.didBecomeActiveNotification. Prior versions silently broke after a phone call or home-button trip — required relaunch.",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.20",
             date: "May 5",
             hints: [

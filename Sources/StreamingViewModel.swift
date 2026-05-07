@@ -40,6 +40,26 @@ final class StreamingViewModel: ObservableObject {
     init() {
         // JMM Tailscale IP, streaming server port 9201.
         self.endpoint = URL(string: "ws://100.80.225.86:9201")!
+
+        // v0.2.21 fix: when iOS suspends + resumes the app (phone call, home button,
+        // background), AVAudioSession deactivates silently and the WebSocket can
+        // drop without notification. UIApplication.didBecomeActiveNotification fires
+        // on every foreground transition; re-assert the audio session and let the
+        // active session's resume path rebuild the engine if needed.
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self = self else { return }
+                try? AVAudioSession.sharedInstance().setActive(true)
+                // If a session is mid-flight, give it a chance to recover; the session's
+                // own foreground hook handles engine restart specifics.
+                self.session?.handleAppDidBecomeActive()
+                self.onDeviceSession?.handleAppDidBecomeActive()
+            }
+        }
     }
 
     func requestMicPermission() {

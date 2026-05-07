@@ -115,7 +115,17 @@ final class OnDeviceConversationSession: NSObject {
         }
 
         engine.attach(playerNode)
-        let connFormat = engine.mainMixerNode.outputFormat(forBus: 0)
+        // v0.2.21 fix: mainMixerNode.outputFormat(forBus:0) returns a 0-channel format
+        // on a freshly-activated audio session before the output graph has been built,
+        // causing engine.connect to throw an uncatchable NSInvalidArgumentException
+        // ("required condition is false: format.channelCount > 0"). outputNode.inputFormat
+        // is the format the engine will actually send to hardware — same trick Apple uses
+        // in their AVAudioEngine playback samples. Fall back to a known-good 48kHz stereo
+        // if even that comes back zero-channel (paranoia).
+        let candidateFormat = engine.outputNode.inputFormat(forBus: 0)
+        let connFormat: AVAudioFormat = (candidateFormat.channelCount > 0)
+            ? candidateFormat
+            : AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2)!
         engine.connect(playerNode, to: engine.mainMixerNode, format: connFormat)
         self.playerConnectionFormat = connFormat
         self.ttsResampler = AVAudioConverter(from: ttsFormat, to: connFormat)
@@ -145,6 +155,16 @@ final class OnDeviceConversationSession: NSObject {
         speechFrameCount = 0
         inSpeech = false
         accumulatorLock.unlock()
+    }
+
+    /// v0.2.21 — re-assert session + engine on foreground. iOS may have deactivated
+    /// during background; without this the playerNode has nothing to push frames into.
+    func handleAppDidBecomeActive() {
+        guard isRunning else { return }
+        try? AVAudioSession.sharedInstance().setActive(true)
+        if !engine.isRunning {
+            try? engine.start()
+        }
     }
 
     func mute() { isMuted = true }

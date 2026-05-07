@@ -272,6 +272,17 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
         isRunning = false
     }
 
+    /// v0.2.21 — re-assert audio session on foreground. iOS may have deactivated
+    /// it during background. If the engine isn't running, this is a no-op (next
+    /// `start()` rebuilds cleanly). If it IS running, ensure the session stays hot.
+    func handleAppDidBecomeActive() {
+        guard isRunning else { return }
+        try? AVAudioSession.sharedInstance().setActive(true)
+        if !engine.isRunning {
+            try? engine.start()
+        }
+    }
+
     func mute() {
         // Tell server to finish the in-flight utterance before going mute,
         // so the user's mid-sentence isn't discarded.
