@@ -147,6 +147,7 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
             engine.prepare()
             try? engine.start()
         }
+        micArmedAt = CFAbsoluteTimeGetCurrent() + micWarmupGrace
     }
 
     deinit { NotificationCenter.default.removeObserver(self) }
@@ -209,6 +210,16 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
     private var bargeInArmedAt: CFAbsoluteTime = 0
     private let bargeInGracePeriod: CFAbsoluteTime = 0.6
 
+    /// Earliest time at which mic frames are forwarded to the server.
+    /// On `start()` and after route/config rebuilds, the AVAudioSession
+    /// HAL takes 100-300ms to fully activate (especially under iOS 17+
+    /// .spokenAudio / BT routes). During that window the mic tap fires
+    /// but buffers are silent/garbage, so Silero never trips and the
+    /// user's first word(s) are dropped. Gate uploads until the HAL
+    /// is warm. Local level meter still updates so the UI feels live.
+    private var micArmedAt: CFAbsoluteTime = 0
+    private let micWarmupGrace: CFAbsoluteTime = 0.25
+
     private func hasExternalOutputRoute(_ session: AVAudioSession) -> Bool {
         let externalTypes: Set<AVAudioSession.Port> = [
             .bluetoothA2DP, .bluetoothHFP, .bluetoothLE, .carAudio, .headphones, .airPlay, .usbAudio
@@ -258,6 +269,7 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
         webSocket = task
         task.resume()
         receiveLoop()
+        micArmedAt = CFAbsoluteTimeGetCurrent() + micWarmupGrace
         isRunning = true
     }
 
@@ -324,6 +336,15 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
     private func handleMicBuffer(_ buffer: AVAudioPCMBuffer) {
         if isMuted {
             // Keep the waveform rolling toward flat instead of freezing.
+            DispatchQueue.main.async { [weak self] in self?.onEvent?(.level(0)) }
+            return
+        }
+        // Warm-up gate: the first ~250ms of frames after engine start
+        // are silent/garbage while the AVAudioSession HAL activates.
+        // Drop them client-side so they never reach Silero — which
+        // otherwise stays below threshold long enough that the user's
+        // first word lands before pre-roll catches up.
+        if CFAbsoluteTimeGetCurrent() < micArmedAt {
             DispatchQueue.main.async { [weak self] in self?.onEvent?(.level(0)) }
             return
         }
