@@ -228,6 +228,7 @@ struct ContentView: View {
         case .muted: return "muted — tap the CPU to unmute"
         case .listening: return "listening"
         case .speaking_: return "hearing you..."
+        case .heardYou: return "got it — processing"
         case .thinking: return "thinking..."
         case .playing: return "speaking..."
         }
@@ -238,6 +239,7 @@ struct ContentView: View {
         case .muted: return .red
         case .listening: return .blue
         case .speaking_: return .red
+        case .heardYou: return Color(red: 0.13, green: 0.84, blue: 0.48)  // bright green burst — got-it signal
         case .thinking: return .orange
         case .playing: return .green
         }

@@ -12,6 +12,14 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.22",
+            date: "May 18",
+            hints: [
+                "New 'got it' state in the status pill: between you finishing speaking and Gemma's reply starting, the indicator turns bright green with a 'got it — processing' label and a success haptic. Kill-shot for the 'can you hear me?' loop — you'll know Gemma heard you within ~200ms of stopping, before STT and the LLM finish.",
+                "Status pipeline expanded: muted → listening → speaking → got-it → thinking → speaking-back. Each state now has a distinct color and label so the app's behavior is legible even when audio playback is delayed.",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.21",
             date: "May 6",
             hints: [

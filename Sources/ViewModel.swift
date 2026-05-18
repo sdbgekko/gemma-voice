@@ -22,8 +22,47 @@ enum Status {
     case muted
     case listening    // engine running, waiting for speech
     case speaking_    // user is talking (RMS above gate)
-    case thinking     // sending to backend
+    case heardYou     // VAD detected silence — heard you, before STT result. NEW 2026-05-18.
+    case thinking     // STT done, sending to backend, waiting for reply
     case playing      // Gemma TTS playing back
+
+    /// SF Symbol name for this state.
+    var sfSymbol: String {
+        switch self {
+        case .muted:      return "mic.slash.fill"
+        case .listening:  return "ear.fill"
+        case .speaking_:  return "waveform"
+        case .heardYou:   return "checkmark.circle.fill"
+        case .thinking:   return "ellipsis.circle.fill"
+        case .playing:    return "speaker.wave.2.fill"
+        }
+    }
+
+    /// Short user-facing label.
+    var label: String {
+        switch self {
+        case .muted:      return "muted"
+        case .listening:  return "listening"
+        case .speaking_:  return "speaking"
+        case .heardYou:   return "got it"
+        case .thinking:   return "thinking"
+        case .playing:    return "speaking"
+        }
+    }
+
+    /// Color tint for this state. Tied to brand gold for active states,
+    /// gray for off, green burst for heard-you (the kill-shot signal for
+    /// "Gemma got my words").
+    var tintHex: String {
+        switch self {
+        case .muted:      return "#9A9A9A"
+        case .listening:  return "#D4A44A"  // brand gold, low intensity
+        case .speaking_:  return "#4CAF50"  // green (you are talking)
+        case .heardYou:   return "#22D67A"  // bright green burst (got it!)
+        case .thinking:   return "#F4D27A"  // soft amber (processing)
+        case .playing:    return "#D4A44A"  // brand gold (agent speaking back)
+        }
+    }
 }
 
 @MainActor

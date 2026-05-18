@@ -234,13 +234,17 @@ final class StreamingViewModel: ObservableObject {
         case .speechEnd:
             if userMuted { break }
             // Audible + haptic ack: sub-200ms signal that I heard you,
-            // before the pipeline starts chewing.
+            // before the pipeline starts chewing. Roundtable synthesis 2026-05-18
+            // ranked this state as #1 fix — the kill-shot for "can you hear me?".
             EarbackTone.shared.play()
-            status = .thinking
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            status = .heardYou
         case .transcriptYou(let text, let speaker):
             if !text.isEmpty {
                 appendTurn(text: text, isGemma: false, source: nil, speaker: speaker)
             }
+            // STT result arrived — promote heardYou → thinking, waiting for reply.
+            if status == .heardYou { status = .thinking }
         case .transcriptGemma(let text, let source):
             if !text.isEmpty {
                 appendTurn(text: text, isGemma: true, source: source, speaker: nil)
@@ -250,13 +254,13 @@ final class StreamingViewModel: ObservableObject {
         case .ttsEnd:
             if userMuted {
                 status = .muted
-            } else if status == .playing || status == .thinking {
+            } else if status == .playing || status == .thinking || status == .heardYou {
                 status = .listening
             }
         case .dropped:
             if userMuted {
                 status = .muted
-            } else if status == .thinking {
+            } else if status == .thinking || status == .heardYou {
                 status = .listening
             }
         case .connectionClosed(let error):
