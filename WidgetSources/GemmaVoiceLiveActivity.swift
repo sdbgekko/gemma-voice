@@ -8,7 +8,7 @@ struct GemmaVoiceLiveActivity: Widget {
         ActivityConfiguration(for: GemmaVoiceActivityAttributes.self) { context in
             // Lock screen / banner UI
             LockScreenView(
-                agentName: context.attributes.agentName,
+                appLabel: context.attributes.appLabel,
                 state: context.state
             )
             .padding(.horizontal, 16)
@@ -24,7 +24,7 @@ struct GemmaVoiceLiveActivity: Widget {
                         Image(systemName: "waveform.circle.fill")
                             .foregroundStyle(.yellow)
                             .font(.system(size: 22, weight: .semibold))
-                        Text(context.attributes.agentName)
+                        Text(context.state.agentName)
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(.white)
                     }
@@ -70,7 +70,7 @@ struct GemmaVoiceLiveActivity: Widget {
 
 @available(iOS 16.2, *)
 private struct LockScreenView: View {
-    let agentName: String
+    let appLabel: String
     let state: GemmaVoiceActivityAttributes.ContentState
 
     var body: some View {
@@ -85,7 +85,7 @@ private struct LockScreenView: View {
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(agentName)
+                Text(state.agentName)
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(.white)
                 Text(state.code.label)
@@ -96,7 +96,7 @@ private struct LockScreenView: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 2) {
-                Text("GemmaVoice")
+                Text(appLabel)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.white.opacity(0.55))
             }

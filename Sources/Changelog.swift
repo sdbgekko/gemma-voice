@@ -12,6 +12,14 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.24",
+            date: "May 19",
+            hints: [
+                "Live Activity now shows the active agent name (Gemma / Daisy / Mackenzie / Malia / Bobbi) instead of always 'Gemma'. The voice-turn server announces which household agent the channel is bound to on every connect; the lock-screen label updates immediately.",
+                "Agent name lives in the activity's content state (not attributes), so a future mid-session agent swap will be a smooth update rather than a re-launch.",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.23",
             date: "May 19",
             hints: [

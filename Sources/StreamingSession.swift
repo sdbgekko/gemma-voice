@@ -16,6 +16,7 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
         case dropped(String)
         case connectionClosed(Error?)
         case level(Float)    // 0..1 RMS of current mic frame
+        case agent(String)   // server-side active agent display name
     }
 
     /// Fire-and-forget callback; always invoked on main.
@@ -476,6 +477,10 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
                     self.onEvent?(.ttsEnd)
                 case "dropped":
                     self.onEvent?(.dropped(json["reason"] as? String ?? ""))
+                case "agent":
+                    if let name = json["name"] as? String, !name.isEmpty {
+                        self.onEvent?(.agent(name))
+                    }
                 default: break
                 }
             }

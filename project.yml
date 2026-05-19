@@ -22,8 +22,8 @@ targets:
       path: WidgetResources/Info.plist
       properties:
         CFBundleDisplayName: GemmaVoice Widgets
-        CFBundleShortVersionString: "0.2.23"
-        CFBundleVersion: "25"
+        CFBundleShortVersionString: "0.2.24"
+        CFBundleVersion: "26"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:
@@ -47,8 +47,8 @@ targets:
       path: WatchResources/Info.plist
       properties:
         CFBundleDisplayName: GemmaVoice
-        CFBundleShortVersionString: "0.2.23"
-        CFBundleVersion: "25"
+        CFBundleShortVersionString: "0.2.24"
+        CFBundleVersion: "26"
         WKApplication: true
         WKCompanionAppBundleIdentifier: com.shermanbrown.gemmavoice
     settings:
@@ -74,8 +74,8 @@ targets:
       path: Resources/Info.plist
       properties:
         CFBundleDisplayName: GemmaVoice
-        CFBundleShortVersionString: "0.2.23"
-        CFBundleVersion: "25"
+        CFBundleShortVersionString: "0.2.24"
+        CFBundleVersion: "26"
         ITSAppUsesNonExemptEncryption: false
         NSSupportsLiveActivities: true
         UILaunchScreen:

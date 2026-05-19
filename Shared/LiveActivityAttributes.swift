@@ -16,17 +16,24 @@ public struct GemmaVoiceActivityAttributes: ActivityAttributes {
     public struct State: Codable, Hashable {
         public var statusCode: Int
         public var lastChanged: Date
+        /// Active agent name (Gemma / Daisy / Mackenzie / Malia / Bobbi).
+        /// Lives in State (not Attributes) so it can be swapped mid-session
+        /// when the server flips voice routing.
+        public var agentName: String
 
-        public init(statusCode: Int, lastChanged: Date) {
+        public init(statusCode: Int, lastChanged: Date, agentName: String) {
             self.statusCode = statusCode
             self.lastChanged = lastChanged
+            self.agentName = agentName
         }
     }
 
-    public let agentName: String
+    /// Fixed across the activity's lifetime. Identifies the app, not the
+    /// agent — that's in State.
+    public let appLabel: String
 
-    public init(agentName: String) {
-        self.agentName = agentName
+    public init(appLabel: String = "GemmaVoice") {
+        self.appLabel = appLabel
     }
 }
 

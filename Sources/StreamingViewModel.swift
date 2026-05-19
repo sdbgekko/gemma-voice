@@ -39,6 +39,7 @@ final class StreamingViewModel: ObservableObject {
     private let recentLevelsCap = 80   // ~2.5s at 32ms/frame
     private var statusCancellable: AnyCancellable?
     private var liveActivityStarted = false
+    private var currentAgentName: String = "Gemma"
 
     init() {
         // JMM Tailscale IP, streaming server port 9201.
@@ -78,7 +79,7 @@ final class StreamingViewModel: ObservableObject {
                 let code = newStatus.liveActivityCode
                 if !self.liveActivityStarted && newStatus != .muted {
                     LiveActivityController.shared.start(
-                        agentName: "Gemma",
+                        agentName: self.currentAgentName,
                         initialStatus: code
                     )
                     self.liveActivityStarted = true
@@ -304,6 +305,10 @@ final class StreamingViewModel: ObservableObject {
             // doesn't lie about an alive session.
             LiveActivityController.shared.end()
             liveActivityStarted = false
+        case .agent(let name):
+            // Server is announcing which agent the voice channel is bound to.
+            currentAgentName = name
+            LiveActivityController.shared.updateAgentName(name)
         }
     }
 

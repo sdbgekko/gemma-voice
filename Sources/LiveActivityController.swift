@@ -24,6 +24,11 @@ final class LiveActivityController {
     }
     private var _activity: Any?
 
+    /// Mirrored copy of last-known state so partial updates (just status,
+    /// or just agent name) don't blank the other field.
+    private var lastAgentName: String = "Gemma"
+    private var lastStatus: LiveActivityStatusCode = .listening
+
     /// Start a Live Activity. No-op if Live Activities are disabled,
     /// or if the iOS version doesn't support them.
     func start(agentName: String = "Gemma", initialStatus: LiveActivityStatusCode = .listening) {
@@ -37,10 +42,13 @@ final class LiveActivityController {
         // Live Activity.
         endInternal()
 
-        let attrs = GemmaVoiceActivityAttributes(agentName: agentName)
+        self.lastAgentName = agentName
+        self.lastStatus = initialStatus
+        let attrs = GemmaVoiceActivityAttributes(appLabel: "GemmaVoice")
         let state = GemmaVoiceActivityAttributes.ContentState(
             statusCode: initialStatus.rawValue,
-            lastChanged: Date()
+            lastChanged: Date(),
+            agentName: agentName
         )
         do {
             self.activity = try Activity.request(
@@ -57,10 +65,24 @@ final class LiveActivityController {
     /// Push a new content state. ActivityKit dedupes near-identical
     /// payloads; caller doesn't need to throttle.
     func update(to code: LiveActivityStatusCode) {
+        lastStatus = code
+        pushState()
+    }
+
+    /// Update just the agent name (e.g. server flipped routing from
+    /// Gemma to Daisy). Keeps current status as-is.
+    func updateAgentName(_ name: String) {
+        guard !name.isEmpty else { return }
+        lastAgentName = name
+        pushState()
+    }
+
+    private func pushState() {
         guard #available(iOS 16.2, *), let activity = self.activity else { return }
         let state = GemmaVoiceActivityAttributes.ContentState(
-            statusCode: code.rawValue,
-            lastChanged: Date()
+            statusCode: lastStatus.rawValue,
+            lastChanged: Date(),
+            agentName: lastAgentName
         )
         // staleDate of 30s — if the app dies without ending the activity,
         // ActivityKit will visually de-emphasize after 30s instead of
