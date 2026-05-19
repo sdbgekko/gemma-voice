@@ -12,6 +12,15 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.23",
+            date: "May 19",
+            hints: [
+                "Live Activity + Dynamic Island — GemmaVoice now publishes its current state to the lock screen and the Dynamic Island. Glance at your phone in your pocket and see whether Gemma is listening, got-it, thinking, or speaking back, without unlocking. Direct fix for the 'can you hear me?' loop.",
+                "Status icons + tints match the in-app pill: blue ear for listening, green check for got-it, amber dots for thinking, purple speaker for speaking, gray slash for muted.",
+                "If you don't see the Live Activity on lock screen: Settings → GemmaVoice → toggle Allow Live Activities ON. iOS asks once on first launch after this update.",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.22",
             date: "May 18",
             hints: [

@@ -1,4 +1,5 @@
 import AVFoundation
+import Combine
 import Foundation
 import SwiftUI
 
@@ -36,6 +37,8 @@ final class StreamingViewModel: ObservableObject {
     /// with loud-but-stationary background noise.
     private var recentLevels: [Float] = []
     private let recentLevelsCap = 80   // ~2.5s at 32ms/frame
+    private var statusCancellable: AnyCancellable?
+    private var liveActivityStarted = false
 
     init() {
         // JMM Tailscale IP, streaming server port 9201.
@@ -59,6 +62,36 @@ final class StreamingViewModel: ObservableObject {
                 self.session?.handleAppDidBecomeActive()
                 self.onDeviceSession?.handleAppDidBecomeActive()
             }
+        }
+
+        // Push every status change to the Live Activity. The first non-muted
+        // transition starts the activity; .connectionClosed ends it.
+        statusCancellable = $status
+            .removeDuplicates { lhs, rhs in
+                // Treat .speaking_ as the same state as itself even when
+                // the timestamp would otherwise force a refresh — we
+                // only want to push transitions, not every audio frame.
+                String(describing: lhs) == String(describing: rhs)
+            }
+            .sink { [weak self] newStatus in
+                guard let self = self else { return }
+                let code = newStatus.liveActivityCode
+                if !self.liveActivityStarted && newStatus != .muted {
+                    LiveActivityController.shared.start(
+                        agentName: "Gemma",
+                        initialStatus: code
+                    )
+                    self.liveActivityStarted = true
+                } else if self.liveActivityStarted {
+                    LiveActivityController.shared.update(to: code)
+                }
+            }
+    }
+
+    deinit {
+        statusCancellable?.cancel()
+        Task { @MainActor in
+            LiveActivityController.shared.end()
         }
     }
 
@@ -267,6 +300,10 @@ final class StreamingViewModel: ObservableObject {
             errorMessage = error.map { "Connection closed: \($0.localizedDescription)" }
                 ?? "Connection closed"
             status = .muted
+            // Tear down the Live Activity so the lock-screen indicator
+            // doesn't lie about an alive session.
+            LiveActivityController.shared.end()
+            liveActivityStarted = false
         }
     }
 

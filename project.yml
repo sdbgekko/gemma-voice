@@ -11,6 +11,30 @@ settings:
     DEVELOPMENT_TEAM: JKCNSW94H7
     CODE_SIGN_STYLE: Automatic
 targets:
+  GemmaVoiceWidgets:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "16.2"
+    sources:
+      - path: WidgetSources
+      - path: Shared
+    info:
+      path: WidgetResources/Info.plist
+      properties:
+        CFBundleDisplayName: GemmaVoice Widgets
+        CFBundleShortVersionString: "0.2.23"
+        CFBundleVersion: "25"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.shermanbrown.gemmavoice.widgets
+        DEVELOPMENT_TEAM: JKCNSW94H7
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: "NO"
+        INFOPLIST_FILE: WidgetResources/Info.plist
+        SKIP_INSTALL: "YES"
+        CODE_SIGN_STYLE: Automatic
   GemmaVoiceWatch:
     type: application
     platform: watchOS
@@ -23,8 +47,8 @@ targets:
       path: WatchResources/Info.plist
       properties:
         CFBundleDisplayName: GemmaVoice
-        CFBundleShortVersionString: "0.2.20"
-        CFBundleVersion: "22"
+        CFBundleShortVersionString: "0.2.23"
+        CFBundleVersion: "25"
         WKApplication: true
         WKCompanionAppBundleIdentifier: com.shermanbrown.gemmavoice
     settings:
@@ -43,15 +67,17 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - path: Sources
+      - path: Shared
       - path: Resources/Assets.xcassets
         buildPhase: resources
     info:
       path: Resources/Info.plist
       properties:
         CFBundleDisplayName: GemmaVoice
-        CFBundleShortVersionString: "0.2.20"
-        CFBundleVersion: "22"
+        CFBundleShortVersionString: "0.2.23"
+        CFBundleVersion: "25"
         ITSAppUsesNonExemptEncryption: false
+        NSSupportsLiveActivities: true
         UILaunchScreen:
           UIColorName: ""
         UIBackgroundModes:
@@ -75,5 +101,8 @@ targets:
         INFOPLIST_FILE: Resources/Info.plist
     dependencies:
       - target: GemmaVoiceWatch
+        embed: true
+        codeSign: true
+      - target: GemmaVoiceWidgets
         embed: true
         codeSign: true
