@@ -15,6 +15,7 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
         case ttsEnd
         case dropped(String)
         case connectionClosed(Error?)
+        case connectionOpened
         case level(Float)    // 0..1 RMS of current mic frame
         case agent(String)   // server-side active agent display name
     }
@@ -191,11 +192,38 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
                 try? engine.start()
             }
             rebuildMicTap()
+            // P0-1: the WebSocket and its receive loop don't reliably survive a
+            // background stint — the receive-failure path bails out while
+            // backgrounded (wasBackgrounded guard) and never reconnects. Rebuild
+            // the socket from scratch on foreground so we're never falsely
+            // "listening" on a dead socket. reconnectNow forces an immediate
+            // fresh connection (no backoff wait).
+            reconnectNow()
         }
     }
 
     private var wasBackgrounded = false
     private var isReconnecting = false
+
+    // P0-1: honest connection state + exponential-backoff reconnect.
+    /// Number of consecutive reconnect attempts; drives the backoff delay
+    /// (1s → cap 30s). Reset to 0 on a successful handshake / message.
+    private var reconnectAttempt = 0
+    private let maxReconnectDelay: TimeInterval = 30
+    /// 10s WebSocket ping keepalive. A missing pong or a stale receive
+    /// (no message/pong for `pongTimeout`) is treated as a disconnect so
+    /// the UI can't sit on a false "listening" over a dead socket.
+    private var pingTimer: Timer?
+    private var lastPongAt: CFAbsoluteTime = 0
+    private let pingInterval: TimeInterval = 10
+    private let pongTimeout: TimeInterval = 22   // ~2 missed intervals
+
+    // P0-2: true half-duplex — keep isTTSPlaying true until playback actually
+    // DRAINS (outstanding scheduleBuffer completion handlers hit zero), plus a
+    // tail grace, not on the server's tts_end. Mirrors the on-device path.
+    private var ttsBuffersInFlight = 0
+    private let ttsBufferLock = NSLock()
+    private let ttsDrainTailGrace: TimeInterval = 0.8
 
     // Barge-in: track whether TTS is currently playing so the mic path can
     // detect user speech-over-TTS and signal an interrupt to the server.
@@ -265,24 +293,25 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
         engine.prepare()
         try engine.start()
 
-        // WebSocket + send loop.
-        let task = urlSession.webSocketTask(with: url)
-        webSocket = task
-        task.resume()
-        receiveLoop()
+        // WebSocket + send loop + ping keepalive.
         micArmedAt = CFAbsoluteTimeGetCurrent() + micWarmupGrace
         isRunning = true
+        connectSocket()
     }
 
     func stop() {
         guard isRunning else { return }
+        // Set first so the receive-failure / ping paths bail out instead of
+        // scheduling a reconnect during teardown.
+        isRunning = false
+        reconnectAttempt = 0
+        stopPingTimer()
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         playerNode.stop()
         webSocket?.cancel(with: .goingAway, reason: nil)
         webSocket = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
-        isRunning = false
     }
 
     /// v0.2.21 — re-assert audio session on foreground. iOS may have deactivated
@@ -322,6 +351,7 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
         NSLog("[GemmaVoice] barge-in detected — interrupting TTS")
         isTTSPlaying = false
         bargeInFrames = 0
+        ttsBufferLock.lock(); ttsBuffersInFlight = 0; ttsBufferLock.unlock()
         // Send interrupt over WS immediately (URLSessionWebSocketTask is
         // thread-safe). Player teardown jumps to main.
         sendControl(["type": "interrupt"])
@@ -416,32 +446,148 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
     // MARK: - Receive
 
     private func receiveLoop() {
-        webSocket?.receive { [weak self] result in
+        let task = webSocket
+        task?.receive { [weak self] result in
             guard let self = self else { return }
+            // Ignore callbacks from a socket we've already replaced (a
+            // reconnect swapped `webSocket` out from under this closure).
+            guard task === self.webSocket else { return }
             switch result {
             case .failure(let error):
-                // Don't fire error alert for our own cancel during
-                // backgrounding or shutdown.
+                // Don't fire the disconnect path for our own cancel during
+                // backgrounding or shutdown, or if a reconnect is already in
+                // flight. handleForeground() rebuilds the socket on return.
                 if self.isReconnecting || self.wasBackgrounded || !self.isRunning {
                     return
                 }
-                // Auto-reconnect once on unexpected socket close (server
-                // restart, network blip). Silent — no alert unless the
-                // reconnect itself fails.
-                NSLog("[GemmaVoice] WS receive failed, attempting reconnect: \(error)")
-                self.isReconnecting = true
-                self.webSocket?.cancel(with: .goingAway, reason: nil)
-                let task = self.urlSession.webSocketTask(with: self.url)
-                self.webSocket = task
-                task.resume()
-                self.isReconnecting = false
-                self.receiveLoop()
+                // P0-1: unexpected socket close (server restart, network blip).
+                // Emit the honest connectionClosed event and reconnect with
+                // exponential backoff instead of a silent one-shot retry.
+                NSLog("[GemmaVoice] WS receive failed: \(error)")
+                self.handleDisconnect(error)
                 return
             case .success(let message):
+                // Any inbound traffic proves the socket is live — refresh the
+                // liveness clock and clear the backoff counter.
+                self.lastPongAt = CFAbsoluteTimeGetCurrent()
+                self.reconnectAttempt = 0
                 self.handleIncoming(message)
                 self.receiveLoop()
             }
         }
+    }
+
+    // MARK: - Connection lifecycle (P0-1)
+
+    /// Open a fresh WebSocket, start the receive loop + ping keepalive.
+    private func connectSocket() {
+        guard isRunning else { return }
+        webSocket?.cancel(with: .goingAway, reason: nil)
+        let task = urlSession.webSocketTask(with: url)
+        webSocket = task
+        task.resume()
+        lastPongAt = CFAbsoluteTimeGetCurrent()
+        isReconnecting = false
+        startPingTimer()
+        receiveLoop()
+    }
+
+    /// Tear the socket down, tell the UI honestly, and schedule a backoff
+    /// reconnect. Idempotent while a reconnect is already pending.
+    private func handleDisconnect(_ error: Error?) {
+        guard isRunning, !isReconnecting else { return }
+        isReconnecting = true
+        stopPingTimer()
+        webSocket?.cancel(with: .goingAway, reason: nil)
+        webSocket = nil
+        DispatchQueue.main.async { [weak self] in self?.onEvent?(.connectionClosed(error)) }
+        scheduleReconnect()
+    }
+
+    /// Exponential backoff: 1s, 2s, 4s, … capped at 30s.
+    private func scheduleReconnect() {
+        let delay = min(maxReconnectDelay, pow(2.0, Double(reconnectAttempt)))
+        reconnectAttempt += 1
+        NSLog("[GemmaVoice] reconnecting in \(delay)s (attempt \(reconnectAttempt))")
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self = self, self.isRunning, self.isReconnecting else { return }
+            self.connectSocket()
+        }
+    }
+
+    /// User-initiated (tap-to-reconnect) or foreground reconnect — immediate,
+    /// no backoff wait.
+    func reconnectNow() {
+        guard isRunning else { return }
+        stopPingTimer()
+        isReconnecting = true
+        webSocket?.cancel(with: .goingAway, reason: nil)
+        webSocket = nil
+        reconnectAttempt = 0
+        connectSocket()
+    }
+
+    // MARK: - Ping keepalive (P0-1)
+
+    private func startPingTimer() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.pingTimer?.invalidate()
+            let t = Timer.scheduledTimer(withTimeInterval: self.pingInterval, repeats: true) { [weak self] _ in
+                self?.sendPing()
+            }
+            RunLoop.main.add(t, forMode: .common)
+            self.pingTimer = t
+        }
+    }
+
+    private func stopPingTimer() {
+        DispatchQueue.main.async { [weak self] in
+            self?.pingTimer?.invalidate()
+            self?.pingTimer = nil
+        }
+    }
+
+    private func sendPing() {
+        guard isRunning, !isReconnecting, let ws = webSocket else { return }
+        // Stale receive: no message or pong within the timeout window → dead.
+        let now = CFAbsoluteTimeGetCurrent()
+        if now - lastPongAt > pongTimeout {
+            NSLog("[GemmaVoice] no pong/message in \(Int(now - lastPongAt))s — treating as disconnect")
+            handleDisconnect(nil)
+            return
+        }
+        ws.sendPing { [weak self] error in
+            guard let self = self else { return }
+            // Ignore a pong/error from a socket we've already replaced.
+            guard ws === self.webSocket else { return }
+            if let error = error {
+                NSLog("[GemmaVoice] ping failed: \(error)")
+                self.handleDisconnect(error)
+            } else {
+                self.lastPongAt = CFAbsoluteTimeGetCurrent()
+            }
+        }
+    }
+
+    // MARK: - URLSessionWebSocketDelegate (P0-1)
+
+    func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask,
+                    didOpenWithProtocol proto: String?) {
+        // Handshake completed — the socket is genuinely live. Reset backoff and
+        // tell the UI it's honest to show a listening state again.
+        lastPongAt = CFAbsoluteTimeGetCurrent()
+        reconnectAttempt = 0
+        DispatchQueue.main.async { [weak self] in self?.onEvent?(.connectionOpened) }
+    }
+
+    func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask,
+                    didCloseWith closeCode: URLSessionWebSocketTask.CloseCode,
+                    reason: Data?) {
+        // Server-initiated close. Ignore our own teardown / backgrounding.
+        guard isRunning, !isReconnecting, !wasBackgrounded, webSocketTask === webSocket else { return }
+        NSLog("[GemmaVoice] WS closed by peer (code \(closeCode.rawValue))")
+        handleDisconnect(nil)
     }
 
     private func handleIncoming(_ message: URLSessionWebSocketTask.Message) {
@@ -466,12 +612,23 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
                     self.onEvent?(.transcriptGemma(json["text"] as? String ?? "",
                                                     source: json["source"] as? String))
                 case "tts_end":
-                    self.isTTSPlaying = false
-                    self.bargeInFrames = 0
+                    // P0-2: tts_end means the server is done SENDING, not that
+                    // audio has finished PLAYING. Don't clear isTTSPlaying (the
+                    // mic-upload gate) here — that reopens the mic while our own
+                    // speaker is still draining and the server transcribes our
+                    // voice as the user. If all scheduled buffers have already
+                    // drained, start the tail-grace timer; otherwise the last
+                    // buffer's completion handler starts it.
+                    self.ttsBufferLock.lock()
+                    let alreadyDrained = self.ttsBuffersInFlight <= 0
+                    self.ttsBufferLock.unlock()
+                    if alreadyDrained { self.scheduleTTSDrainCheck() }
                     self.onEvent?(.ttsEnd)
                 case "tts_interrupted":
+                    // Barge-in / interrupt: flush immediately and reopen the mic.
                     self.isTTSPlaying = false
                     self.bargeInFrames = 0
+                    self.ttsBufferLock.lock(); self.ttsBuffersInFlight = 0; self.ttsBufferLock.unlock()
                     self.playerNode.stop()
                     self.playerNode.reset()
                     self.onEvent?(.ttsEnd)
@@ -531,7 +688,24 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
         if !playerNode.isPlaying {
             playerNode.play()
         }
-        playerNode.scheduleBuffer(bufferToSchedule, completionHandler: nil)
+        // P0-2: count outstanding buffers so isTTSPlaying stays true until
+        // playback actually DRAINS (mirrors OnDeviceConversationSession's
+        // playerNode.isPlaying poll). Increment on schedule, decrement in the
+        // completion block; when the count hits zero, kick the tail-grace timer.
+        ttsBufferLock.lock()
+        ttsBuffersInFlight += 1
+        ttsBufferLock.unlock()
+        playerNode.scheduleBuffer(bufferToSchedule) { [weak self] in
+            guard let self = self else { return }
+            self.ttsBufferLock.lock()
+            self.ttsBuffersInFlight -= 1
+            let drained = self.ttsBuffersInFlight <= 0
+            if drained { self.ttsBuffersInFlight = 0 }
+            self.ttsBufferLock.unlock()
+            if drained {
+                DispatchQueue.main.async { [weak self] in self?.scheduleTTSDrainCheck() }
+            }
+        }
         // Mark TTS as actively playing so the mic loop can detect barge-in.
         // First chunk of a turn arms the grace-period window so the
         // player-warmup tail and TTS-bleed-through-mic can't self-interrupt.
@@ -541,6 +715,24 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
         }
         isTTSPlaying = true
         bargeInFrames = 0
+    }
+
+    /// P0-2: once the scheduled TTS buffers have drained, wait a short tail
+    /// grace before reopening the mic upload gate (isTTSPlaying=false). If a
+    /// new chunk arrives during the grace window the count goes positive again
+    /// and we leave the gate closed — a transient inter-chunk gap must not
+    /// reopen the mic mid-utterance and let the speaker bleed re-transcribe.
+    private func scheduleTTSDrainCheck() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + ttsDrainTailGrace) { [weak self] in
+            guard let self = self else { return }
+            self.ttsBufferLock.lock()
+            let stillDrained = self.ttsBuffersInFlight <= 0
+            self.ttsBufferLock.unlock()
+            if stillDrained {
+                self.isTTSPlaying = false
+                self.bargeInFrames = 0
+            }
+        }
     }
 
     // MARK: - Control

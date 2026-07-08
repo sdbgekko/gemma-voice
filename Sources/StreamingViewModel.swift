@@ -128,6 +128,14 @@ final class StreamingViewModel: ObservableObject {
         onDeviceSession?.forceCut()
     }
 
+    /// P0-1: user tapped the "disconnected — tap to reconnect" pill. Force a
+    /// fresh WebSocket immediately (no backoff wait). The on-device path has
+    /// no socket, so this is a no-op there. .connectionOpened confirms the
+    /// live state; we don't optimistically flip to listening here.
+    func reconnect() {
+        session?.reconnectNow()
+    }
+
     private func startSession() {
         // Snapshot toggle once at session start; mid-session switching is
         // out of scope for v0.2.16. Sherman flips → taps mute/unmute or
@@ -291,20 +299,39 @@ final class StreamingViewModel: ObservableObject {
             } else if status == .playing || status == .thinking || status == .heardYou {
                 status = .listening
             }
-        case .dropped:
+        case .dropped(let reason):
+            // P0-3 belt-and-suspenders: the server now drops self-echo BEFORE
+            // sending transcript_you, so ghost bubbles should already be gone.
+            // As a client safety net, if the server reports a self-echo drop,
+            // remove the most-recent non-Gemma turn appended within the last
+            // ~10s (a ghost that slipped through an older server).
+            if reason.hasPrefix("self-echo"),
+               let idx = transcript.lastIndex(where: { !$0.isGemma }),
+               Date().timeIntervalSince(transcript[idx].timestamp) <= 10 {
+                transcript.remove(at: idx)
+            }
             if userMuted {
                 status = .muted
             } else if status == .thinking || status == .heardYou {
                 status = .listening
             }
-        case .connectionClosed(let error):
-            errorMessage = error.map { "Connection closed: \($0.localizedDescription)" }
-                ?? "Connection closed"
-            status = .muted
+        case .connectionClosed:
+            // P0-1: the socket is down. Show an honest .disconnected state in
+            // the pill (never a false "listening") instead of popping a modal
+            // alert on every background→foreground blip — the session backs
+            // off and reconnects on its own, and .connectionOpened restores
+            // the live state. Sticky mute wins over disconnected display.
+            if !userMuted { status = .disconnected }
+            errorMessage = nil
             // Tear down the Live Activity so the lock-screen indicator
             // doesn't lie about an alive session.
             LiveActivityController.shared.end()
             liveActivityStarted = false
+        case .connectionOpened:
+            // P0-1: WebSocket handshake completed — the socket is genuinely
+            // live, so it's honest to show listening again (unless muted).
+            errorMessage = nil
+            if !userMuted && status == .disconnected { status = .listening }
         case .agent(let name):
             // Server is announcing which agent the voice channel is bound to.
             currentAgentName = name

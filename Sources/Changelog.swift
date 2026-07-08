@@ -12,6 +12,16 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.25",
+            date: "Jul 8",
+            hints: [
+                "The app stops lying about its connection. If the link to Gemma drops, you now see 'disconnected — tap to reconnect' instead of a fake 'listening.' It reconnects on its own with backoff and pings to catch silent drops — no more force-quit to wake it up.",
+                "Gemma's mic goes deaf while she's talking. True half-duplex: the mic stays closed until her voice actually finishes playing (not just finishes sending), so she never hears — or echoes — herself. This is the real fix for the echo you saw.",
+                "No more ghost bubbles. Gemma's own words picked up by the mic are dropped before they ever reach your screen or her brain — handled on both the server and the app now.",
+                "Settings finally tells the truth about speech recognition. The on-device vs server toggle and what's actually running now agree (they didn't before on a fresh install).",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.24",
             date: "May 19",
             hints: [

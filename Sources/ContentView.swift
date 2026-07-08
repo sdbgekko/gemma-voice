@@ -108,12 +108,22 @@ struct ContentView: View {
 
     private var statusBar: some View {
         HStack {
-            Circle()
-                .fill(statusColor)
-                .frame(width: 10, height: 10)
-            Text(statusLabel)
-                .font(.caption)
-                .foregroundColor(.secondary)
+            // P0-1: when the socket is down, the pill reads "disconnected —
+            // tap to reconnect" and becomes a tap target that forces a fresh
+            // connection. Hit-testing is only enabled in the disconnected
+            // state so it doesn't swallow taps during normal operation.
+            Button(action: { viewModel.reconnect() }) {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(statusColor)
+                        .frame(width: 10, height: 10)
+                    Text(statusLabel)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .buttonStyle(.plain)
+            .allowsHitTesting(viewModel.status == .disconnected)
             Spacer()
             Button(action: { showSettings = true }) {
                 Image(systemName: "gearshape.fill")
@@ -231,6 +241,7 @@ struct ContentView: View {
         case .heardYou: return "got it — processing"
         case .thinking: return "thinking..."
         case .playing: return "speaking..."
+        case .disconnected: return "disconnected — tap to reconnect"
         }
     }
 
@@ -242,6 +253,7 @@ struct ContentView: View {
         case .heardYou: return Color(red: 0.13, green: 0.84, blue: 0.48)  // bright green burst — got-it signal
         case .thinking: return .orange
         case .playing: return .green
+        case .disconnected: return .gray
         }
     }
 }

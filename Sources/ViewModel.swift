@@ -25,6 +25,7 @@ enum Status {
     case heardYou     // VAD detected silence — heard you, before STT result. NEW 2026-05-18.
     case thinking     // STT done, sending to backend, waiting for reply
     case playing      // Gemma TTS playing back
+    case disconnected // P0-1: WebSocket down — NOT listening. Tap to reconnect.
 
     /// SF Symbol name for this state.
     var sfSymbol: String {
@@ -35,6 +36,7 @@ enum Status {
         case .heardYou:   return "checkmark.circle.fill"
         case .thinking:   return "ellipsis.circle.fill"
         case .playing:    return "speaker.wave.2.fill"
+        case .disconnected: return "wifi.slash"
         }
     }
 
@@ -47,6 +49,7 @@ enum Status {
         case .heardYou:   return "got it"
         case .thinking:   return "thinking"
         case .playing:    return "speaking"
+        case .disconnected: return "disconnected"
         }
     }
 
@@ -61,6 +64,7 @@ enum Status {
         case .heardYou:   return "#22D67A"  // bright green burst (got it!)
         case .thinking:   return "#F4D27A"  // soft amber (processing)
         case .playing:    return "#D4A44A"  // brand gold (agent speaking back)
+        case .disconnected: return "#9A9A9A"  // gray — no live socket
         }
     }
 }

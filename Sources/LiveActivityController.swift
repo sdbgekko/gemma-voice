@@ -120,6 +120,7 @@ extension Status {
         case .heardYou:   return .heardYou
         case .thinking:   return .thinking
         case .playing:    return .playing
+        case .disconnected: return .lostConnection
         }
     }
 }
