@@ -134,16 +134,21 @@ struct ContentView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "waveform")
-                .font(.largeTitle)
-                .foregroundColor(.secondary)
+        VStack(spacing: 20) {
+            // Sherman's gold GEMMA logo — the hero of the idle screen.
+            // Shown until the first turn lands, then the ledger takes over.
+            Image("GoldGemma")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 20)
+                .accessibilityLabel("Gemma")
             Text("Tap to talk — your turns show up here.")
                 .font(.callout)
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 60)
+        .padding(.top, 40)
     }
 
     // MARK: - Dock (live state + waveform + real labeled mute button)
