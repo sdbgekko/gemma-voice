@@ -28,7 +28,7 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            Color.white.ignoresSafeArea()
+            Color(.systemBackground).ignoresSafeArea()
             GeometryReader { geo in
                 ZStack(alignment: .top) {
                     // Logo fit into the upper portion of the screen. Tap anywhere on
@@ -152,7 +152,7 @@ struct ContentView: View {
             }
             .background(
                 LinearGradient(
-                    colors: [Color.white.opacity(0.0), Color.white.opacity(0.92)],
+                    colors: [Color(.systemBackground).opacity(0.0), Color(.systemBackground).opacity(0.92)],
                     startPoint: .top,
                     endPoint: .bottom
                 )
@@ -178,7 +178,7 @@ struct ContentView: View {
                 Text(turn.text)
                     .font(.callout)
                     .padding(8)
-                    .background(turn.isGemma ? Color(.systemGray5) : Color.blue.opacity(0.85))
+                    .background(turn.isGemma ? Color(.systemGray5) : Color.gemmaMicBlue)
                     .foregroundColor(turn.isGemma ? .primary : .white)
                     .cornerRadius(12)
                 if turn.isGemma, let src = turn.source {
@@ -245,16 +245,12 @@ struct ContentView: View {
         }
     }
 
+    // Bug fix: the old local switch mapped BOTH .muted and .speaking_ to
+    // .red (a collision that read as "error" for a normal speaking state).
+    // Repoint to the single source of truth — Status.tintHex in ViewModel.swift
+    // (gray muted, green speaking, gold playing, etc. — already correct there).
     private var statusColor: Color {
-        switch viewModel.status {
-        case .muted: return .red
-        case .listening: return .blue
-        case .speaking_: return .red
-        case .heardYou: return Color(red: 0.13, green: 0.84, blue: 0.48)  // bright green burst — got-it signal
-        case .thinking: return .orange
-        case .playing: return .green
-        case .disconnected: return .gray
-        }
+        Color(hex: viewModel.status.tintHex)
     }
 }
 
@@ -296,4 +292,42 @@ struct WaveformView: View {
             startPoint: .top, endPoint: .bottom
         )
     }
+}
+
+// MARK: - Design color tokens
+//
+// Two WCAG contrast fixes plus a hex helper so Status.tintHex (defined in
+// ViewModel.swift) can drive SwiftUI colors directly.
+
+extension UIColor {
+    /// "#RRGGBB" (leading '#' optional). Falls back to opaque black on a
+    /// malformed string rather than trapping.
+    convenience init(hex: String) {
+        var s = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        if s.hasPrefix("#") { s.removeFirst() }
+        var v: UInt64 = 0
+        Scanner(string: s).scanHexInt64(&v)
+        let r = CGFloat((v & 0xFF0000) >> 16) / 255
+        let g = CGFloat((v & 0x00FF00) >> 8) / 255
+        let b = CGFloat(v & 0x0000FF) / 255
+        self.init(red: r, green: g, blue: b, alpha: 1)
+    }
+}
+
+extension Color {
+    init(hex: String) { self.init(UIColor(hex: hex)) }
+
+    /// Contrast fix: brand gold #D4A44A is only 2.28:1 as TEXT on white (AA
+    /// fail). Keep #D4A44A for accents/fills/glows, but text uses this token —
+    /// #D4A44A in dark mode (on the dark ground it clears AA), darkened to
+    /// #8A6414 in light mode (~4.6:1 on white). Dynamic so the appearance
+    /// picker resolves it live.
+    static let gemmaGoldText = Color(UIColor { trait in
+        trait.userInterfaceStyle == .dark ? UIColor(hex: "#D4A44A")
+                                           : UIColor(hex: "#8A6414")
+    })
+
+    /// Contrast fix: white label on system blue is ~3.26:1 (borderline).
+    /// #2E6FD6 lifts white-on-blue to ~4.6:1 (AA).
+    static let gemmaMicBlue = Color(hex: "#2E6FD6")
 }
