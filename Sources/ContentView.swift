@@ -5,18 +5,6 @@ struct ContentView: View {
     @EnvironmentObject var viewModel: StreamingViewModel
     @AppStorage("appearance") private var appearance: String = "system"
     @State private var showSettings = false
-    /// Heartbeat — subtle scale pulse on the logo so Sherman can tell at a
-    /// glance that the app is alive and rendering. Freezes if the view
-    /// stops updating (connection dropped, app hung, stuck render).
-    @State private var heartbeat = false
-
-    private var backgroundImage: UIImage? {
-        UIImage(named: "GoldGemma")
-    }
-
-    private var mutedImage: UIImage? {
-        UIImage(named: "GoldGemmaMuted")
-    }
 
     private var preferredScheme: ColorScheme? {
         switch appearance {
@@ -27,97 +15,35 @@ struct ContentView: View {
     }
 
     var body: some View {
-        ZStack {
-            Color(.systemBackground).ignoresSafeArea()
-            GeometryReader { geo in
-                ZStack(alignment: .top) {
-                    // Logo fit into the upper portion of the screen. Tap anywhere on
-                    // the logo to toggle mute; a red square highlights the CPU chip
-                    // position to show muted state.
-                    let logoFrameWidth = geo.size.width
-                    let logoFrameHeight = geo.size.height * 0.7
-                    let logoCenterY = geo.size.height * 0.38
-                    // GoldGemma.png is 1536x1024 (1.5:1 landscape). With aspectRatio .fit
-                    // and frame wider than tall, the rendered image height = width / 1.5.
-                    let renderedImageHeight = min(logoFrameHeight, logoFrameWidth / 1.5)
-                    let imageTopY = logoCenterY - renderedImageHeight / 2
-                    // The CPU chip in the source image sits at ~27% from top, centered.
-                    let chipScreenY = imageTopY + renderedImageHeight * 0.27
-                    let chipSize: CGFloat = renderedImageHeight * 0.08
-                    Button(action: { viewModel.toggleMute() }) {
-                        // Always render the gold logo as the base; the
-                        // red-CPU variant lives on top with opacity driven
-                        // by mute state, so toggling produces a crossfade
-                        // that visually reads as "the CPU chip turns red".
-                        ZStack {
-                            if let img = backgroundImage {
-                                Image(uiImage: img)
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fit)
-                                    .frame(width: logoFrameWidth, height: logoFrameHeight)
-                            }
-                            if let muted = mutedImage {
-                                Image(uiImage: muted)
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fit)
-                                    .frame(width: logoFrameWidth, height: logoFrameHeight)
-                                    .opacity(viewModel.status == .muted ? 1.0 : 0.0)
-                                    .animation(.easeInOut(duration: 0.35),
-                                               value: viewModel.status == .muted)
-                            }
-                        }
-                        .scaleEffect(heartbeat ? 1.018 : 1.0)
-                        .animation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true),
-                                   value: heartbeat)
-                    }
-                    .buttonStyle(.plain)
-                    .position(x: logoFrameWidth / 2, y: logoCenterY)
-                    // Gold waveform just below the logo.
-                    WaveformView(samples: viewModel.levelHistory, active: viewModel.status == .speaking_)
-                        .frame(width: geo.size.width * 0.75, height: 48)
-                        .position(x: geo.size.width / 2, y: geo.size.height * 0.62)
-                    // Status label above the logo.
-                    VStack {
-                        statusBar
-                        Spacer()
-                    }
-                    // Transcript strip at the very bottom.
-                    VStack {
-                        Spacer()
-                        transcriptStrip
-                            .frame(height: geo.size.height * 0.28)
-                            .padding(.bottom, 24)
-                    }
-                }
+        VStack(spacing: 0) {
+            connectionBar
+            if let err = viewModel.errorMessage {
+                errorChip(err)
             }
+            ledgerList
+            dock
         }
+        .background(Color(.systemBackground).ignoresSafeArea())
         .preferredColorScheme(preferredScheme)
-        .onAppear {
-            viewModel.requestMicPermission()
-            heartbeat = true
-        }
-        .alert("Error", isPresented: .constant(viewModel.errorMessage != nil), actions: {
-            Button("OK") { viewModel.errorMessage = nil }
-        }, message: {
-            Text(viewModel.errorMessage ?? "")
-        })
+        .onAppear { viewModel.requestMicPermission() }
         .sheet(isPresented: $showSettings) {
             SettingsView(appearance: $appearance)
         }
     }
 
-    private var statusBar: some View {
-        HStack {
-            // P0-1: when the socket is down, the pill reads "disconnected —
-            // tap to reconnect" and becomes a tap target that forces a fresh
-            // connection. Hit-testing is only enabled in the disconnected
-            // state so it doesn't swallow taps during normal operation.
+    // MARK: - Connection bar (honest socket state + settings)
+
+    private var connectionBar: some View {
+        HStack(spacing: 8) {
+            // P0-1: when the socket is down this reads "disconnected — tap to
+            // reconnect" and forces a fresh connection. Hit-testing is only
+            // enabled while disconnected so it never swallows normal taps.
             Button(action: { viewModel.reconnect() }) {
                 HStack(spacing: 6) {
                     Circle()
-                        .fill(statusColor)
-                        .frame(width: 10, height: 10)
-                    Text(statusLabel)
+                        .fill(connectionColor)
+                        .frame(width: 8, height: 8)
+                    Text(connectionLabel)
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -127,115 +53,143 @@ struct ContentView: View {
             Spacer()
             Button(action: { showSettings = true }) {
                 Image(systemName: "gearshape.fill")
-                    .font(.title2)
+                    .font(.title3)
                     .foregroundColor(.primary)
-                    .frame(width: 32, height: 32)
+                    .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         }
         .padding(.horizontal, 16)
-        .padding(.top, 8)
+        .padding(.top, 4)
     }
 
-    private var transcriptStrip: some View {
+    private var connectionLabel: String {
+        viewModel.status == .disconnected ? "disconnected — tap to reconnect" : "connected"
+    }
+
+    private var connectionColor: Color {
+        viewModel.status == .disconnected ? Color(hex: "#9A9A9A") : Color(hex: "#22D67A")
+    }
+
+    // MARK: - Inline error chip (replaces the modal .alert for transient events)
+
+    private func errorChip(_ msg: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundColor(.orange)
+            Text(msg)
+                .font(.footnote)
+                .foregroundColor(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer()
+            Button(action: { viewModel.errorMessage = nil }) {
+                Image(systemName: "xmark")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundColor(.secondary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.leading, 12)
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(12)
+        .padding(.horizontal, 16)
+        .padding(.top, 6)
+    }
+
+    // MARK: - Ledger list
+
+    private var ledgerList: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 8) {
-                    ForEach(viewModel.transcript.suffix(6)) { turn in
-                        turnBubble(turn)
-                            .id(turn.id)
+                LazyVStack(spacing: 12) {
+                    if viewModel.ledger.isEmpty {
+                        emptyState
+                    } else {
+                        ForEach(viewModel.ledger) { turn in
+                            TurnCardView(turn: turn)
+                                .id(turn.id)
+                        }
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
+                .padding(16)
             }
-            .background(
-                LinearGradient(
-                    colors: [Color(.systemBackground).opacity(0.0), Color(.systemBackground).opacity(0.92)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
-            .onChange(of: viewModel.transcript.last?.id) { _, newId in
-                // Tracking last-id, not count — the maxTurns trim keeps count
-                // pinned at 6 once the transcript fills up, so count-based
-                // onChange stops firing. Also re-fire a beat later so scroll
-                // lands after layout finishes laying out the new bubble.
-                guard let id = newId else { return }
-                withAnimation { proxy.scrollTo(id, anchor: .bottom) }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                    withAnimation { proxy.scrollTo(id, anchor: .bottom) }
-                }
+            // New card appended → scroll to it. Also re-scroll when the newest
+            // card changes phase (reply lands, card grows) so the latest stays
+            // in view.
+            .onChange(of: viewModel.ledger.last?.id) { _, id in
+                scrollToLatest(proxy, id)
+            }
+            .onChange(of: viewModel.ledger.last?.phase) { _, _ in
+                scrollToLatest(proxy, viewModel.ledger.last?.id)
             }
         }
     }
 
-    private func turnBubble(_ turn: Turn) -> some View {
-        HStack {
-            if turn.isGemma { Spacer(minLength: 40) }
-            VStack(alignment: turn.isGemma ? .trailing : .leading, spacing: 2) {
-                Text(turn.text)
-                    .font(.callout)
-                    .padding(8)
-                    .background(turn.isGemma ? Color(.systemGray5) : Color.gemmaMicBlue)
-                    .foregroundColor(turn.isGemma ? .primary : .white)
-                    .cornerRadius(12)
-                if turn.isGemma, let src = turn.source {
-                    Text(sourceLabel(src))
-                        .font(.caption2)
-                        .foregroundColor(sourceColor(src))
-                        .padding(.horizontal, 6)
-                }
-                Text(captionFor(turn))
-                    .font(.caption2)
+    private func scrollToLatest(_ proxy: ScrollViewProxy, _ id: UUID?) {
+        guard let id = id else { return }
+        withAnimation { proxy.scrollTo(id, anchor: .bottom) }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "waveform")
+                .font(.largeTitle)
+                .foregroundColor(.secondary)
+            Text("Tap to talk — your turns show up here.")
+                .font(.callout)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 60)
+    }
+
+    // MARK: - Dock (live state + waveform + real labeled mute button)
+
+    private var dock: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 10, height: 10)
+                Text(statusLabel)
+                    .font(.subheadline)
                     .foregroundColor(.secondary)
-                    .padding(.horizontal, 6)
             }
-            .frame(maxWidth: .infinity, alignment: turn.isGemma ? .trailing : .leading)
-            if !turn.isGemma { Spacer(minLength: 40) }
+            WaveformView(
+                samples: viewModel.levelHistory,
+                active: viewModel.status == .speaking_ || viewModel.status == .playing
+            )
+            .frame(height: 40)
+            .padding(.horizontal, 24)
+            muteButton
         }
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+        .padding(.bottom, 12)
+        .background(Color(.secondarySystemBackground).ignoresSafeArea(edges: .bottom))
     }
 
-    private func captionFor(_ turn: Turn) -> String {
-        let name: String
-        if turn.isGemma {
-            name = "Gemma"
-        } else if let s = turn.speaker, !s.isEmpty {
-            name = s
-        } else {
-            name = "You"
+    private var muteButton: some View {
+        Button(action: { viewModel.toggleMute() }) {
+            HStack(spacing: 8) {
+                Image(systemName: viewModel.status == .muted ? "mic.slash.fill" : "mic.fill")
+                Text(viewModel.status == .muted ? "Tap to talk" : "Mute")
+                    .font(.headline)
+            }
+            .foregroundColor(.white)   // white-on-gemmaMicBlue clears AA (contrast fix)
+            .frame(maxWidth: .infinity, minHeight: 52)
+            .background(viewModel.status == .muted ? Color(hex: "#6E6E73") : Color.gemmaMicBlue)
+            .cornerRadius(14)
         }
-        return "\(name) · \(Self.timeFormatter.string(from: turn.timestamp))"
-    }
-
-    private static let timeFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "h:mm a"
-        return f
-    }()
-
-    private func sourceLabel(_ src: String) -> String {
-        switch src {
-        case "gemma":  return "Gemma"
-        case "claude": return "Claude API"
-        case "jarvis": return "Jarvis (fallback)"
-        default:       return src
-        }
-    }
-
-    private func sourceColor(_ src: String) -> Color {
-        switch src {
-        case "gemma":  return .green
-        case "claude": return .blue
-        case "jarvis": return .orange
-        default:       return .secondary
-        }
+        .buttonStyle(.plain)
     }
 
     private var statusLabel: String {
         switch viewModel.status {
-        case .muted: return "muted — tap the CPU to unmute"
+        case .muted: return "muted — tap to talk"
         case .listening: return "listening"
         case .speaking_: return "hearing you..."
         case .heardYou: return "got it — processing"

@@ -15,8 +15,10 @@
 		4454328DB8B78B9CB6C62396 /* GemmaVoiceLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57ED71D5A6411BDF3D73C5C /* GemmaVoiceLiveActivity.swift */; };
 		4CD2F32CD51A0ED3C2E62066 /* LiveActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 817BAD4EC8A33CC5333DEFFF /* LiveActivityAttributes.swift */; };
 		4EFA05BDBF9FBEBBA99E009D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0EEB15BAD7C61FB0A6400CC8 /* Assets.xcassets */; };
+		5450EBAEE3F002364577D99C /* TurnCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEC00FA2E266E16D066BE509 /* TurnCardView.swift */; };
 		61FF0FB62CB37DCFBB3725B3 /* TextTurnClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B37F3B1399C2FF8241D8EE53 /* TextTurnClient.swift */; };
 		6619B870724825B2BE6E06D2 /* OnDeviceSTT.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65084D5F1C669037DFC39BB8 /* OnDeviceSTT.swift */; };
+		77476F08A8DD63FD10F0B5D9 /* LedgerTurn.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42A38662174A707C86C34430 /* LedgerTurn.swift */; };
 		7780E917775B1C3E34F37FC9 /* AudioRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE3447742665AA1F8518F0E5 /* AudioRecorder.swift */; };
 		78C912E5646CD8EB9EA2981F /* VoiceAuthSecret.swift in Sources */ = {isa = PBXBuildFile; fileRef = 433C994C01D5D47EFA5F99FC /* VoiceAuthSecret.swift */; };
 		8B31CF5E9C43868068B4F17E /* OnDeviceConversationSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58C0170FF31B87119E0BF6F9 /* OnDeviceConversationSession.swift */; };
@@ -86,6 +88,7 @@
 		0EEB15BAD7C61FB0A6400CC8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		161B6A8D1B9F353B4DBEFA99 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		1C6EEA7752462D4D77D81949 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		42A38662174A707C86C34430 /* LedgerTurn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerTurn.swift; sourceTree = "<group>"; };
 		433C994C01D5D47EFA5F99FC /* VoiceAuthSecret.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAuthSecret.swift; sourceTree = "<group>"; };
 		459DFF39F43E10B8033E48FA /* GemmaVoiceWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = GemmaVoiceWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		58C0170FF31B87119E0BF6F9 /* OnDeviceConversationSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnDeviceConversationSession.swift; sourceTree = "<group>"; };
@@ -97,6 +100,7 @@
 		96770E5AAD35DE9C6B709A1F /* WatchBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchBridge.swift; sourceTree = "<group>"; };
 		9CD6FF746303C5E6A90C5085 /* ViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModel.swift; sourceTree = "<group>"; };
 		A57ED71D5A6411BDF3D73C5C /* GemmaVoiceLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GemmaVoiceLiveActivity.swift; sourceTree = "<group>"; };
+		AEC00FA2E266E16D066BE509 /* TurnCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TurnCardView.swift; sourceTree = "<group>"; };
 		B015275E89C8C9573430EFFC /* VoiceAuthSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAuthSetupView.swift; sourceTree = "<group>"; };
 		B37F3B1399C2FF8241D8EE53 /* TextTurnClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextTurnClient.swift; sourceTree = "<group>"; };
 		B5886E5F151902131B1C214D /* StreamingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingViewModel.swift; sourceTree = "<group>"; };
@@ -169,6 +173,7 @@
 				F32BCD10426226671D4307EC /* ContentView.swift */,
 				0478F1B10235AA78A91BB431 /* EarbackTone.swift */,
 				D76531DC826ED3D1FF16910B /* GemmaVoiceApp.swift */,
+				42A38662174A707C86C34430 /* LedgerTurn.swift */,
 				792411C73D8340A3122B4CBD /* LiveActivityController.swift */,
 				58C0170FF31B87119E0BF6F9 /* OnDeviceConversationSession.swift */,
 				65084D5F1C669037DFC39BB8 /* OnDeviceSTT.swift */,
@@ -177,6 +182,7 @@
 				B5886E5F151902131B1C214D /* StreamingViewModel.swift */,
 				B37F3B1399C2FF8241D8EE53 /* TextTurnClient.swift */,
 				917687C6344D613AAF20EC9E /* TranscriptPostProcessor.swift */,
+				AEC00FA2E266E16D066BE509 /* TurnCardView.swift */,
 				9CD6FF746303C5E6A90C5085 /* ViewModel.swift */,
 				433C994C01D5D47EFA5F99FC /* VoiceAuthSecret.swift */,
 				B015275E89C8C9573430EFFC /* VoiceAuthSetupView.swift */,
@@ -362,6 +368,7 @@
 				9F5D5B4CBE1CF15C8E815F26 /* ContentView.swift in Sources */,
 				9D799BBE36E435F0DA767178 /* EarbackTone.swift in Sources */,
 				907B993DE19F14DCB2C24206 /* GemmaVoiceApp.swift in Sources */,
+				77476F08A8DD63FD10F0B5D9 /* LedgerTurn.swift in Sources */,
 				FBCD1AF2A6AC772DF3478310 /* LiveActivityAttributes.swift in Sources */,
 				9FB87E78A770C323525A3791 /* LiveActivityController.swift in Sources */,
 				8B31CF5E9C43868068B4F17E /* OnDeviceConversationSession.swift in Sources */,
@@ -371,6 +378,7 @@
 				0FAE1BADB6DD3097BE0CE9FA /* StreamingViewModel.swift in Sources */,
 				61FF0FB62CB37DCFBB3725B3 /* TextTurnClient.swift in Sources */,
 				D9890576BB70C610741C9CCD /* TranscriptPostProcessor.swift in Sources */,
+				5450EBAEE3F002364577D99C /* TurnCardView.swift in Sources */,
 				EE275C7947985C52B4CD46BB /* ViewModel.swift in Sources */,
 				78C912E5646CD8EB9EA2981F /* VoiceAuthSecret.swift in Sources */,
 				B93B97F7721D991AB90B0507 /* VoiceAuthSetupView.swift in Sources */,

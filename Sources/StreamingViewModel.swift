@@ -11,6 +11,10 @@ import SwiftUI
 @MainActor
 final class StreamingViewModel: ObservableObject {
     @Published var transcript: [Turn] = []
+    /// UI source of truth for the turn-ledger view. Maintained alongside
+    /// `transcript` (which still feeds WatchBridge). Strictly serial in v1:
+    /// late events attach to the newest still-open card.
+    @Published var ledger: [LedgerTurn] = []
     @Published var status: Status = .muted
     @Published var errorMessage: String?
     @Published var currentLevel: Float = 0
@@ -217,22 +221,27 @@ final class StreamingViewModel: ObservableObject {
             if userMuted { break }
             EarbackTone.shared.play()
             status = .thinking
+            ledgerAppendHeard()
         case .transcriptYou(let text):
             if !text.isEmpty {
                 appendTurn(text: text, isGemma: false, source: "on-device", speaker: "sherman")
+                ledgerFillYou(text, speaker: "sherman")
             }
         case .transcriptGemma(let text):
             if !text.isEmpty {
                 appendTurn(text: text, isGemma: true, source: "gemma", speaker: nil)
+                ledgerSetReply(text, source: "gemma")
             }
             if !userMuted { status = .playing }
         case .ttsEnd:
+            ledgerAnswered()
             if userMuted {
                 status = .muted
             } else if status == .playing || status == .thinking {
                 status = .listening
             }
         case .dropped(let reason):
+            ledgerDropped(reason)
             if userMuted {
                 status = .muted
             } else if status == .thinking {
@@ -281,19 +290,23 @@ final class StreamingViewModel: ObservableObject {
             EarbackTone.shared.play()
             UINotificationFeedbackGenerator().notificationOccurred(.success)
             status = .heardYou
+            ledgerAppendHeard()
         case .transcriptYou(let text, let speaker):
             if !text.isEmpty {
                 appendTurn(text: text, isGemma: false, source: nil, speaker: speaker)
+                ledgerFillYou(text, speaker: speaker)
             }
             // STT result arrived — promote heardYou → thinking, waiting for reply.
             if status == .heardYou { status = .thinking }
         case .transcriptGemma(let text, let source):
             if !text.isEmpty {
                 appendTurn(text: text, isGemma: true, source: source, speaker: nil)
+                ledgerSetReply(text, source: source)
             }
             // Only flip UI to .playing if user isn't muted; mute is sticky.
             if !userMuted { status = .playing }
         case .ttsEnd:
+            ledgerAnswered()
             if userMuted {
                 status = .muted
             } else if status == .playing || status == .thinking || status == .heardYou {
@@ -310,6 +323,7 @@ final class StreamingViewModel: ObservableObject {
                Date().timeIntervalSince(transcript[idx].timestamp) <= 10 {
                 transcript.remove(at: idx)
             }
+            ledgerDropped(reason)
             if userMuted {
                 status = .muted
             } else if status == .thinking || status == .heardYou {
@@ -346,5 +360,67 @@ final class StreamingViewModel: ObservableObject {
             transcript.removeFirst(transcript.count - maxTurns)
         }
         WatchBridge.shared.sendTurn(id: turn.id, text: text, isGemma: isGemma)
+    }
+
+    // MARK: - Turn ledger
+    //
+    // Event → phase mapping (v1 serial): speechEnd → append .heard;
+    // transcriptYou → fill youText/speaker, .working, startedAt;
+    // transcriptGemma → fill reply/source, .speaking; ttsEnd → .answered;
+    // dropped → .dropped(reason). Connection events do NOT touch the ledger —
+    // they drive the dock only.
+
+    private let maxLedger = 20
+
+    /// Newest card that hasn't reached a terminal phase (.answered/.dropped).
+    /// v1 correlation is positional only — no server rid echo yet.
+    private var latestPendingIndex: Int? {
+        ledger.lastIndex { turn in
+            switch turn.phase {
+            case .answered, .dropped: return false
+            default: return true
+            }
+        }
+    }
+
+    private func ledgerAppendHeard() {
+        ledger.append(LedgerTurn(youText: "", speaker: nil, reply: nil, source: nil,
+                                 rid: nil, phase: .heard, startedAt: nil, answeredAt: nil))
+        if ledger.count > maxLedger {
+            ledger.removeFirst(ledger.count - maxLedger)
+        }
+    }
+
+    private func ledgerFillYou(_ text: String, speaker: String?) {
+        guard let i = latestPendingIndex else {
+            // No open card (missed speechEnd) — synthesize one already in flight.
+            ledger.append(LedgerTurn(youText: text, speaker: speaker, reply: nil,
+                                     source: nil, rid: nil, phase: .working,
+                                     startedAt: Date(), answeredAt: nil))
+            if ledger.count > maxLedger { ledger.removeFirst(ledger.count - maxLedger) }
+            return
+        }
+        ledger[i].youText = text
+        ledger[i].speaker = speaker
+        ledger[i].phase = .working
+        ledger[i].startedAt = Date()
+    }
+
+    private func ledgerSetReply(_ text: String, source: String?) {
+        guard let i = latestPendingIndex else { return }
+        ledger[i].reply = text
+        ledger[i].source = source
+        ledger[i].phase = .speaking
+    }
+
+    private func ledgerAnswered() {
+        guard let i = latestPendingIndex else { return }
+        ledger[i].phase = .answered
+        ledger[i].answeredAt = Date()
+    }
+
+    private func ledgerDropped(_ reason: String) {
+        guard let i = latestPendingIndex else { return }
+        ledger[i].phase = .dropped(reason)
     }
 }
