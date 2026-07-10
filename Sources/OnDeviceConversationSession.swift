@@ -57,9 +57,13 @@ final class OnDeviceConversationSession: NSObject {
     /// treated as silence for VAD purposes.
     private let speechRmsThreshold: Float = 0.012   // a bit higher than server floor — local mic gain runs hotter
     /// Frames of continuous silence required to end an utterance. 32ms per
-    /// frame at 16kHz/512-sample chunks → 25 frames = 800ms. Matches the
-    /// "shorter heuristic" called out in the dispatch.
-    private let silenceFramesToCut = 25
+    /// frame at 16kHz/512-sample chunks. Dropped 25→16 (800ms→512ms) to shave
+    /// ~300ms off end-of-utterance latency. Safe to shorten now that STT is
+    /// streamed live during speech (see beginStreaming): a slightly early cut
+    /// only ends the audio feed — the recognizer has already transcribed
+    /// everything appended up to endStreaming(), so the transcript isn't
+    /// clipped the way a cold end-of-speech batch could be.
+    private let silenceFramesToCut = 16
     /// Minimum utterance length, also in 32ms frames. 15 = 480ms (matches
     /// server MIN_UTTERANCE_FRAMES).
     private let minUtteranceFrames = 15
@@ -69,6 +73,17 @@ final class OnDeviceConversationSession: NSObject {
     private var silenceFrameCount = 0
     private var speechFrameCount = 0
     private var inSpeech = false
+
+    // Live streaming STT (v0.2.28). The recognizer runs DURING speech instead of
+    // a cold batch at speech-end. `streamingActive` gates mic-frame feeding;
+    // `latestPartial` is the most recent incremental transcript (used as a
+    // fallback if the streamed final drains empty). The final arrives async via
+    // deliverStreamingFinal → either resumes `streamFinalCont` or is stashed in
+    // `pendingStreamResult` when the awaiter hasn't installed a continuation yet.
+    private var streamingActive = false
+    private var latestPartial = ""
+    private var streamFinalCont: CheckedContinuation<String, Error>?
+    private var pendingStreamResult: Result<String, Error>?
 
     // State machine
     private var isRunning = false
@@ -147,6 +162,9 @@ final class OnDeviceConversationSession: NSObject {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         playerNode.stop()
+        // Abandon any in-flight live recognizer so a teardown/mute leaves no
+        // recognition task running.
+        OnDeviceSTT.shared.cancelStreaming()
         try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
         isRunning = false
         accumulatorLock.lock()
@@ -154,7 +172,15 @@ final class OnDeviceConversationSession: NSObject {
         silenceFrameCount = 0
         speechFrameCount = 0
         inSpeech = false
+        streamingActive = false
         accumulatorLock.unlock()
+        // Release any awaiter that was blocked on a streamed final so its Task
+        // doesn't hang after the session is torn down.
+        if let cont = streamFinalCont {
+            streamFinalCont = nil
+            cont.resume(throwing: OnDeviceSTT.STTError.recognitionFailed("session stopped"))
+        }
+        pendingStreamResult = nil
     }
 
     /// v0.2.21 — re-assert session + engine on foreground. iOS may have deactivated
@@ -177,13 +203,15 @@ final class OnDeviceConversationSession: NSObject {
             accumulatorLock.unlock()
             return
         }
-        let pcm = pcmAccumulator
         pcmAccumulator.removeAll(keepingCapacity: true)
         silenceFrameCount = 0
         speechFrameCount = 0
         inSpeech = false
+        streamingActive = false
         accumulatorLock.unlock()
-        Task { await processUtterance(pcm: pcm) }
+        // Close the live stream; processUtterance awaits the drained final.
+        OnDeviceSTT.shared.endStreaming()
+        Task { await processUtterance() }
     }
 
     // MARK: - Mic loop
@@ -233,6 +261,11 @@ final class OnDeviceConversationSession: NSObject {
             if isSpeech {
                 if !inSpeech {
                     inSpeech = true
+                    // Spin up the live recognizer at speech onset so THIS
+                    // utterance is transcribed as it arrives. The current `out`
+                    // buffer (fed below) carries the onset, so no lead-in drop.
+                    latestPartial = ""
+                    beginStreaming()
                     DispatchQueue.main.async { [weak self] in self?.onEvent?(.speechStart) }
                 }
                 speechFrameCount += 1
@@ -244,17 +277,29 @@ final class OnDeviceConversationSession: NSObject {
             let total = speechFrameCount + silenceFrameCount
             if inSpeech && (silenceFrameCount >= silenceFramesToCut || total >= maxUtteranceFrames) {
                 if speechFrameCount >= minUtteranceFrames {
-                    let pcm = trimToProcessed()
+                    // Stop feeding + close the audio stream; the recognizer
+                    // drains to its final while processUtterance awaits it.
+                    streamingActive = false
+                    OnDeviceSTT.shared.endStreaming()
+                    pcmAccumulator.removeAll(keepingCapacity: true)
+                    resetUtteranceState()
                     accumulatorLock.unlock()
                     DispatchQueue.main.async { [weak self] in self?.onEvent?(.speechEnd) }
-                    Task { [weak self] in await self?.processUtterance(pcm: pcm) }
+                    Task { [weak self] in await self?.processUtterance() }
                     accumulatorLock.lock()
                 } else {
-                    // Drop tiny utterance, reset.
+                    // Drop tiny utterance, reset — abandon its live stream too.
+                    streamingActive = false
+                    OnDeviceSTT.shared.cancelStreaming()
                     pcmAccumulator.removeAll(keepingCapacity: true)
                     resetUtteranceState()
                 }
             }
+        }
+        // Feed this callback's converted audio to the live recognizer while
+        // we're mid-utterance (started at speech onset, closed at the cut above).
+        if streamingActive {
+            OnDeviceSTT.shared.appendStreaming(out)
         }
         accumulatorLock.unlock()
     }
@@ -271,16 +316,10 @@ final class OnDeviceConversationSession: NSObject {
         inSpeech = false
         processedSampleCount = 0
     }
-    private func trimToProcessed() -> [Float] {
-        let pcm = pcmAccumulator
-        pcmAccumulator.removeAll(keepingCapacity: true)
-        resetUtteranceState()
-        return pcm
-    }
 
     // MARK: - Utterance processing
 
-    private func processUtterance(pcm: [Float]) async {
+    private func processUtterance() async {
         await MainActor.run { self.isProcessing = true }
         // v0.2.20: hold isProcessing only until playerNode actually drains.
         // v0.2.19's flat 1.5s tail was eating Sherman's first words. Poll
@@ -298,17 +337,21 @@ final class OnDeviceConversationSession: NSObject {
             }
         }
 
-        // Wrap the float array as Data for OnDeviceSTT.
-        let pcmData = pcm.withUnsafeBufferPointer { buf -> Data in
-            return Data(buffer: buf)
-        }
-
+        // The recognizer has been fed live during speech and endStreaming() was
+        // called at the cut; await its drained final (~100-300ms) rather than
+        // transcribing a cold full-utterance batch here.
         let transcript: String
         do {
-            transcript = try await transcribeOnDevice(pcm: pcmData)
+            transcript = try await awaitStreamingFinal()
         } catch {
-            await MainActor.run { self.onEvent?(.dropped("stt: \(error)")) }
-            return
+            // Final drained empty or errored — fall back to the last partial if
+            // we captured one, so a drain hiccup doesn't drop a whole utterance.
+            let fallback = latestPartial.trimmingCharacters(in: .whitespacesAndNewlines)
+            if fallback.isEmpty {
+                await MainActor.run { self.onEvent?(.dropped("stt: \(error)")) }
+                return
+            }
+            transcript = fallback
         }
         let polished = postProcess(transcript)
         if polished.isEmpty {
@@ -344,14 +387,49 @@ final class OnDeviceConversationSession: NSObject {
         }
     }
 
-    private func transcribeOnDevice(pcm: Data) async throws -> String {
-        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<String, Error>) in
-            OnDeviceSTT.shared.transcribe(pcm: pcm) { result in
-                switch result {
-                case .success(let text): cont.resume(returning: text)
-                case .failure(let err):  cont.resume(throwing: err)
-                }
+    // MARK: - Streaming STT lifecycle
+
+    /// Start the live recognizer for the current utterance. onPartial keeps
+    /// `latestPartial` current (fallback + future on-screen display); onFinal
+    /// routes the drained final to deliverStreamingFinal.
+    private func beginStreaming() {
+        guard !streamingActive else { return }
+        pendingStreamResult = nil
+        streamFinalCont = nil
+        let ok = OnDeviceSTT.shared.startStreaming(
+            onPartial: { [weak self] text in
+                Task { @MainActor in self?.latestPartial = text }
+            },
+            onFinal: { [weak self] result in
+                Task { @MainActor in self?.deliverStreamingFinal(result) }
             }
+        )
+        streamingActive = ok
+    }
+
+    /// Receives the streamed final (async, on the main actor). Resumes a waiting
+    /// awaiter if one is installed, otherwise stashes the result so a
+    /// slightly-later awaitStreamingFinal() picks it up. MainActor serialization
+    /// makes this handoff race-free.
+    private func deliverStreamingFinal(_ result: Result<String, OnDeviceSTT.STTError>) {
+        let mapped: Result<String, Error> = result.mapError { $0 as Error }
+        if let cont = streamFinalCont {
+            streamFinalCont = nil
+            cont.resume(with: mapped)
+        } else {
+            pendingStreamResult = mapped
+        }
+    }
+
+    /// Await the drained final for the just-cut utterance. Returns immediately if
+    /// the final already arrived (stashed), else suspends until deliverStreamingFinal.
+    private func awaitStreamingFinal() async throws -> String {
+        if let pending = pendingStreamResult {
+            pendingStreamResult = nil
+            return try pending.get()
+        }
+        return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<String, Error>) in
+            streamFinalCont = cont
         }
     }
 

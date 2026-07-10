@@ -33,6 +33,11 @@ final class OnDeviceSTT {
     private var liveEngine: AVAudioEngine?
     private var liveRequest: SFSpeechAudioBufferRecognitionRequest?
     private var liveTask: SFSpeechRecognitionTask?
+
+    // Push-based streaming state (conversation flow) — see startStreaming. Owns
+    // NO engine/session; the conversation session feeds it from its own mic tap.
+    private var streamRequest: SFSpeechAudioBufferRecognitionRequest?
+    private var streamTask: SFSpeechRecognitionTask?
     // Pre-test session snapshot — restored on cleanup so the conversation flow's
     // .playAndRecord/.spokenAudio session isn't stranded by our .record/.measurement.
     private var savedCategory: AVAudioSession.Category?
@@ -240,5 +245,77 @@ final class OnDeviceSTT {
         savedCategory = nil
         savedMode = nil
         savedOptions = []
+    }
+
+    // MARK: - Push-based streaming (conversation flow)
+    //
+    // Unlike startLive (the Settings test button), this owns NO AVAudioEngine and
+    // NO audio session — the conversation session (OnDeviceConversationSession)
+    // already holds the mic tap and session. It feeds converted 16 kHz frames via
+    // appendStreaming as the user speaks, so recognition runs DURING speech and
+    // the final is ready within the recognizer's short drain (~100-300 ms) after
+    // endStreaming(), instead of a cold full-utterance batch (~300-1200 ms) at
+    // end-of-speech. onPartial streams the incremental transcript; onFinal fires
+    // exactly once, shortly after endStreaming() (or immediately on error).
+
+    /// Begin a live streaming recognition. Returns false (and fires onFinal with
+    /// the reason) if the recognizer is unauthorized/unavailable.
+    func startStreaming(onPartial: @escaping (String) -> Void,
+                        onFinal: @escaping (Result<String, STTError>) -> Void) -> Bool {
+        guard SFSpeechRecognizer.authorizationStatus() == .authorized else {
+            onFinal(.failure(.notAuthorized)); return false
+        }
+        guard let recognizer, recognizer.isAvailable, supportsOnDevice else {
+            onFinal(.failure(.onDeviceUnavailable)); return false
+        }
+        // Abandon any prior stream (e.g. a dropped tiny utterance) first.
+        cancelStreaming()
+
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        request.requiresOnDeviceRecognition = true   // no Apple-server round trip
+        request.shouldReportPartialResults = true    // stream partials as we feed
+        self.streamRequest = request
+
+        var settled = false
+        self.streamTask = recognizer.recognitionTask(with: request) { result, error in
+            if let result {
+                let text = result.bestTranscription.formattedString
+                if result.isFinal {
+                    if settled { return }
+                    settled = true
+                    onFinal(text.isEmpty ? .failure(.emptyResult) : .success(text))
+                } else {
+                    onPartial(text)
+                }
+            }
+            if let error {
+                if settled { return }
+                settled = true
+                onFinal(.failure(.recognitionFailed(error.localizedDescription)))
+            }
+        }
+        return true
+    }
+
+    /// Feed converted mic audio (16 kHz mono float32) to the live recognizer.
+    /// Called from the conversation session's mic tap; SFSpeechAudioBufferRecognitionRequest
+    /// is designed to be appended off the main thread (startLive does the same).
+    func appendStreaming(_ buffer: AVAudioPCMBuffer) {
+        streamRequest?.append(buffer)
+    }
+
+    /// Close the audio stream. The recognizer drains its buffered audio and fires
+    /// the final through onFinal (passed to startStreaming) shortly after.
+    func endStreaming() {
+        streamRequest?.endAudio()
+    }
+
+    /// Abandon the current stream without waiting for a final (teardown / dropped
+    /// short utterance). Safe to call when no stream is active.
+    func cancelStreaming() {
+        streamTask?.cancel()
+        streamRequest?.endAudio()
+        streamRequest = nil
+        streamTask = nil
     }
 }
