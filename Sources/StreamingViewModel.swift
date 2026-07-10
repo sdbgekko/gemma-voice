@@ -312,6 +312,20 @@ final class StreamingViewModel: ObservableObject {
             EarbackTone.shared.play()
             status = .thinking
             ledgerAppendHeard()
+        case .continuationHeard:
+            // A resume merged into the open turn — ack it, but do NOT open a
+            // second card. transcriptContinued grows the existing one in place.
+            if userMuted { break }
+            EarbackTone.shared.play()
+            status = .thinking
+        case .transcriptContinued(let text):
+            // The same turn's text grew ("…first part …continued part"). Update
+            // the last user turn + grow the open ledger card; no new card.
+            if !text.isEmpty {
+                replaceLastUserTurn(text: text, speaker: "sherman")
+                ledgerGrowYou(text)
+            }
+            if !userMuted { status = .thinking }
         case .transcriptYou(let text):
             if !text.isEmpty {
                 appendTurn(text: text, isGemma: false, source: "on-device", speaker: "sherman")
@@ -452,6 +466,21 @@ final class StreamingViewModel: ObservableObject {
         WatchBridge.shared.sendTurn(id: turn.id, text: text, isGemma: isGemma)
     }
 
+    /// Replace the most-recent user turn's text in place (utterance continuation).
+    /// Turn is immutable, so we swap the element; falls back to append if no
+    /// user turn exists yet. Keeps `transcript`/WatchBridge in step with the
+    /// ledger card that grows on a merge.
+    private func replaceLastUserTurn(text: String, speaker: String?) {
+        if let idx = transcript.lastIndex(where: { !$0.isGemma }) {
+            let old = transcript[idx]
+            let merged = Turn(text: text, isGemma: false, source: old.source, speaker: speaker)
+            transcript[idx] = merged
+            WatchBridge.shared.sendTurn(id: merged.id, text: text, isGemma: false)
+        } else {
+            appendTurn(text: text, isGemma: false, source: "on-device", speaker: speaker)
+        }
+    }
+
     // MARK: - Turn ledger
     //
     // Event → phase mapping (v1 serial): speechEnd → append .heard;
@@ -492,6 +521,16 @@ final class StreamingViewModel: ObservableObject {
         }
         ledger[i].youText = text
         ledger[i].speaker = speaker
+        ledger[i].phase = .working
+        ledger[i].startedAt = Date()
+    }
+
+    /// A continuation merged new speech into the open turn: grow the same card's
+    /// text in place and reset it to .working (a fresh reply is now in flight).
+    /// Reuses latestPendingIndex — the still-open card from the first fragment.
+    private func ledgerGrowYou(_ combinedText: String) {
+        guard let i = latestPendingIndex else { return }
+        ledger[i].youText = combinedText
         ledger[i].phase = .working
         ledger[i].startedAt = Date()
     }

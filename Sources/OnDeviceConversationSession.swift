@@ -28,7 +28,15 @@ final class OnDeviceConversationSession: NSObject {
     enum Event {
         case speechStart
         case speechEnd
+        /// A resume that lands inside the continuation grace window. The UI must
+        /// NOT open a new turn card for this — the just-said fragment is being
+        /// merged into the still-open turn (see transcriptContinued). Fires the
+        /// "got it" ack like speechEnd but suppresses the new-card append.
+        case continuationHeard
         case transcriptYou(String)
+        /// Combined transcript of a merged turn ("…first part …continued part").
+        /// The ledger card grows in place rather than a second card appearing.
+        case transcriptContinued(String)
         case transcriptGemma(String)
         case ttsEnd
         case dropped(String)
@@ -57,13 +65,14 @@ final class OnDeviceConversationSession: NSObject {
     /// treated as silence for VAD purposes.
     private let speechRmsThreshold: Float = 0.012   // a bit higher than server floor — local mic gain runs hotter
     /// Frames of continuous silence required to end an utterance. 32ms per
-    /// frame at 16kHz/512-sample chunks. Dropped 25→16 (800ms→512ms) to shave
-    /// ~300ms off end-of-utterance latency. Safe to shorten now that STT is
-    /// streamed live during speech (see beginStreaming): a slightly early cut
-    /// only ends the audio feed — the recognizer has already transcribed
-    /// everything appended up to endStreaming(), so the transcript isn't
-    /// clipped the way a cold end-of-speech batch could be.
-    private let silenceFramesToCut = 16
+    /// frame at 16kHz/512-sample chunks. History: 25 (800ms) → 16 (512ms) in
+    /// 0.2.28 for latency → 20 (640ms) in 0.2.29. Nudged back up because
+    /// 512ms chopped Sherman's mid-thought pauses into two turns; 640ms is
+    /// more pause-forgiving while keeping most of the 0.2.28 speed win, and the
+    /// continuation grace window (below) now catches the longer pauses that
+    /// still slip past the gate by merging the resumed speech into the same
+    /// turn instead of starting a disconnected new one.
+    private let silenceFramesToCut = 20
     /// Minimum utterance length, also in 32ms frames. 15 = 480ms (matches
     /// server MIN_UTTERANCE_FRAMES).
     private let minUtteranceFrames = 15
@@ -88,10 +97,58 @@ final class OnDeviceConversationSession: NSObject {
     // State machine
     private var isRunning = false
     private var isMuted = false
-    /// While the LLM is thinking or TTS is playing, we suspend new
-    /// utterance detection so the user doesn't talk over Gemma's reply
-    /// (and vice versa). Re-enabled on tts_end / error.
+    /// While TTS is playing we suspend new utterance detection so the user
+    /// doesn't talk over Gemma's reply (and vice versa). 0.2.29: this is NO
+    /// longer set the instant the utterance is cut — the continuation grace
+    /// window (below) keeps the mic hot after the send so a resumed thought can
+    /// merge. It's asserted when the reply's first audio arrives (half-duplex)
+    /// or when the grace window expires. Re-enabled on tts_end / error via
+    /// releaseProcessingAfterDrain().
     private var isProcessing = false
+
+    // MARK: Utterance continuation (0.2.29)
+    //
+    // Sherman pauses mid-thought; the silence gate cuts and sends, so his
+    // continued speech used to become a NEW, disconnected turn. Fix: after a
+    // turn is sent, hold a short GRACE window during which the mic stays hot.
+    // If he resumes within it, cancel the in-flight /text_turn, append the new
+    // transcript to the prior text, and re-send as the SAME turn (the ledger
+    // card grows in place). If the reply's audio has already started, the mic
+    // is already half-duplex-deaf, so a later utterance is naturally a new turn
+    // (barge-in-merge is a future enhancement). If the window expires with no
+    // resume, we fall back to normal half-duplex and the turn stands as-is.
+
+    /// How long after a send we keep listening for a continuation. Tunable.
+    /// 2.5s covers a natural mid-thought breath without holding the mic open
+    /// through a long think; note that when the brain is slow (>2.5s to first
+    /// audio) this expires FIRST and the mic goes half-duplex before the reply
+    /// plays — the common path — while a fast reply closes it on first audio.
+    private let continuationGraceWindow: TimeInterval = 2.5
+    /// Right after a cut we play a 160ms earback "got it" tone; with the mic now
+    /// hot during grace it would otherwise feed back into VAD. Swallow input for
+    /// this long after a send so the local tone can't self-trigger a resume.
+    private let earbackGuardWindow: TimeInterval = 0.25
+
+    /// True while a sent turn's grace window is open (mic hot, resume merges).
+    /// Flipped only via setGraceActive() so the mic thread can read it under the
+    /// accumulator lock when classifying a cut as fresh vs. continuation.
+    private var graceActive = false
+    /// Text of the turn currently in its grace window — the base a continuation
+    /// is appended to. Empty when no turn is open.
+    private var pendingTurnText = ""
+    /// The in-flight /text_turn request for the open turn. Cancelled and
+    /// superseded when a continuation merges new speech into the same turn.
+    private var inFlightTurnTask: Task<Void, Never>?
+    /// Fires continuationGraceWindow after a send; closes the window if no
+    /// resume and no reply-audio arrived (falls back to half-duplex).
+    private var graceTimerTask: Task<Void, Never>?
+    /// Set once the open turn's reply audio has begun — guards the grace/expiry
+    /// paths from reopening the mic after playback has started.
+    private var ttsStartedThisTurn = false
+    /// Mic input before this instant is ignored (earback-tone guard). Set on the
+    /// main actor at send time, read on the audio thread — a monotonic Date,
+    /// same off-thread-read posture as isProcessing.
+    private var micHotAfter = Date.distantPast
 
     // Networking — injected so tests can swap a mock.
     private let textTurnClient: TextTurnClientProtocol
@@ -159,6 +216,16 @@ final class OnDeviceConversationSession: NSObject {
 
     func stop() {
         guard isRunning else { return }
+        // Tear the continuation grace window down FIRST: cancel the timer and
+        // any in-flight/pending turn so mute, backgrounding, or teardown can
+        // never leave the mic hot or a request running past the conversation.
+        graceTimerTask?.cancel(); graceTimerTask = nil
+        inFlightTurnTask?.cancel(); inFlightTurnTask = nil
+        setGraceActive(false)
+        pendingTurnText = ""
+        ttsStartedThisTurn = false
+        isProcessing = false
+        micHotAfter = .distantPast
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         playerNode.stop()
@@ -209,15 +276,24 @@ final class OnDeviceConversationSession: NSObject {
         inSpeech = false
         streamingActive = false
         accumulatorLock.unlock()
-        // Close the live stream; processUtterance awaits the drained final.
+        // Close the live stream; handleUtteranceCut awaits the drained final.
+        // A force-cut inside an open grace window still merges (graceActive is
+        // read there), so tapping send on a continued thought keeps one turn.
         OnDeviceSTT.shared.endStreaming()
-        Task { await processUtterance() }
+        Task { await handleUtteranceCut() }
     }
 
     // MARK: - Mic loop
 
     private func handleMicBuffer(_ buffer: AVAudioPCMBuffer) {
         if isMuted || isProcessing {
+            DispatchQueue.main.async { [weak self] in self?.onEvent?(.level(0)) }
+            return
+        }
+        // Earback-tone guard: right after a send the mic is kept hot for the
+        // continuation window, but the local "got it" tone plays in that same
+        // instant — swallow input briefly so it can't self-trigger a resume.
+        if Date() < micHotAfter {
             DispatchQueue.main.async { [weak self] in self?.onEvent?(.level(0)) }
             return
         }
@@ -277,15 +353,22 @@ final class OnDeviceConversationSession: NSObject {
             let total = speechFrameCount + silenceFrameCount
             if inSpeech && (silenceFrameCount >= silenceFramesToCut || total >= maxUtteranceFrames) {
                 if speechFrameCount >= minUtteranceFrames {
+                    // A cut that lands while a turn's grace window is still open
+                    // is a CONTINUATION of that turn, not a new one. graceActive
+                    // is flipped under this same lock (setGraceActive), so the
+                    // read here is race-free.
+                    let continuing = graceActive
                     // Stop feeding + close the audio stream; the recognizer
-                    // drains to its final while processUtterance awaits it.
+                    // drains to its final while handleUtteranceCut awaits it.
                     streamingActive = false
                     OnDeviceSTT.shared.endStreaming()
                     pcmAccumulator.removeAll(keepingCapacity: true)
                     resetUtteranceState()
                     accumulatorLock.unlock()
-                    DispatchQueue.main.async { [weak self] in self?.onEvent?(.speechEnd) }
-                    Task { [weak self] in await self?.processUtterance() }
+                    DispatchQueue.main.async { [weak self] in
+                        self?.onEvent?(continuing ? .continuationHeard : .speechEnd)
+                    }
+                    Task { [weak self] in await self?.handleUtteranceCut() }
                     accumulatorLock.lock()
                 } else {
                     // Drop tiny utterance, reset — abandon its live stream too.
@@ -317,26 +400,13 @@ final class OnDeviceConversationSession: NSObject {
         processedSampleCount = 0
     }
 
-    // MARK: - Utterance processing
+    // MARK: - Utterance processing / continuation state machine
 
-    private func processUtterance() async {
-        await MainActor.run { self.isProcessing = true }
-        // v0.2.20: hold isProcessing only until playerNode actually drains.
-        // v0.2.19's flat 1.5s tail was eating Sherman's first words. Poll
-        // playerNode.isPlaying every 100ms after the stream completes,
-        // release the gate as soon as it stops. Hard cap at 2s so a stuck
-        // playerNode can't latch the mic shut forever.
-        defer {
-            Task { @MainActor [weak self] in
-                guard let self = self else { return }
-                let deadline = Date().addingTimeInterval(2.0)
-                while Date() < deadline && self.playerNode.isPlaying {
-                    try? await Task.sleep(nanoseconds: 100_000_000)
-                }
-                self.isProcessing = false
-            }
-        }
-
+    /// An utterance just ended (VAD cut or force-cut). Transcribe it, then
+    /// either open a FRESH turn or, if a turn's grace window is still open,
+    /// MERGE this fragment into it — cancelling the in-flight request and
+    /// re-sending the combined text as the same turn.
+    private func handleUtteranceCut() async {
         // The recognizer has been fed live during speech and endStreaming() was
         // called at the cut; await its drained final (~100-300ms) rather than
         // transcribing a cold full-utterance batch here.
@@ -348,43 +418,177 @@ final class OnDeviceConversationSession: NSObject {
             // we captured one, so a drain hiccup doesn't drop a whole utterance.
             let fallback = latestPartial.trimmingCharacters(in: .whitespacesAndNewlines)
             if fallback.isEmpty {
-                await MainActor.run { self.onEvent?(.dropped("stt: \(error)")) }
+                self.onEvent?(.dropped("stt: \(error)"))
                 return
             }
             transcript = fallback
         }
         let polished = postProcess(transcript)
         if polished.isEmpty {
-            await MainActor.run { self.onEvent?(.dropped("empty transcript")) }
+            // An empty continuation leaves the open turn untouched; an empty
+            // fresh utterance is a plain drop.
+            if !graceActive { self.onEvent?(.dropped("empty transcript")) }
             return
         }
-        await MainActor.run { self.onEvent?(.transcriptYou(polished)) }
 
-        // POST to /text_turn and play the streamed PCM back as it arrives.
+        if graceActive {
+            // CONTINUATION: supersede the in-flight turn. Cancel its request,
+            // grow the text, and re-send the combined thought as the same turn.
+            inFlightTurnTask?.cancel()
+            let combined = pendingTurnText.isEmpty ? polished : pendingTurnText + " " + polished
+            pendingTurnText = combined
+            self.onEvent?(.transcriptContinued(combined))
+            sendTurn(text: combined)
+        } else {
+            // FRESH turn.
+            pendingTurnText = polished
+            self.onEvent?(.transcriptYou(polished))
+            sendTurn(text: polished)
+        }
+    }
+
+    /// Dispatch (or re-dispatch, on a merge) the open turn to /text_turn and
+    /// open its continuation grace window: the mic stays hot (isProcessing
+    /// stays false) so a resumed thought can merge, until either the reply's
+    /// first audio arrives (→ half-duplex) or the window expires.
+    private func sendTurn(text: String) {
+        setGraceActive(true)
+        ttsStartedThisTurn = false
+        isProcessing = false
+        // Keep the mic hot from here, but swallow the earback tone that plays in
+        // this same instant so it can't self-trigger a continuation.
+        micHotAfter = Date().addingTimeInterval(earbackGuardWindow)
+        startGraceTimer()
+        let turnText = text
+        inFlightTurnTask = Task { [weak self] in
+            await self?.performRequest(turnText)
+        }
+    }
+
+    /// POST the (possibly merged) turn text and stream the reply audio. Bails
+    /// silently if a continuation cancelled it mid-flight — the merged re-send
+    /// now owns the turn.
+    private func performRequest(_ text: String) async {
         do {
             let result = try await textTurnClient.postText(
-                polished,
+                text,
                 speakerHint: "sherman",
                 sessionId: sessionId,
                 onAudioChunk: { [weak self] chunk in
-                    self?.scheduleTTSChunk(chunk)
+                    guard let self = self else { return }
+                    // First reply audio = she's answering. Go half-duplex
+                    // SYNCHRONOUSLY (Bool read on the audio thread) to close the
+                    // echo window tightly, then do the bookkeeping on the main
+                    // actor. Idempotent: only the first chunk of the turn acts.
+                    if self.graceActive {
+                        self.isProcessing = true
+                        Task { @MainActor [weak self] in self?.closeGraceForPlayback() }
+                    }
+                    self.scheduleTTSChunk(chunk)
                 }
             )
-            await MainActor.run { self.onEvent?(.transcriptGemma(result.replyText)) }
-            await MainActor.run { self.onEvent?(.ttsEnd) }
+            if Task.isCancelled { return }
+            self.onEvent?(.transcriptGemma(result.replyText))
+            self.onEvent?(.ttsEnd)
+            finishTurn()
+        } catch is CancellationError {
+            return
         } catch {
-            // Distinguish 2FA vs generic via NSError userInfo if present
-            // (TextTurnClient sets it in commit 3). Either way we surface a
-            // user-visible "dropped" so the conversation flow doesn't hang.
             let ns = error as NSError
+            if Task.isCancelled || ns.code == NSURLErrorCancelled { return }
+            // A real failure ends the turn: release the gate, surface it.
+            finishTurn()
             if let kw = ns.userInfo["matchedKeyword"] as? String {
-                await MainActor.run {
-                    self.onEvent?(.dropped("passphrase required for '\(kw)'"))
-                }
+                self.onEvent?(.dropped("passphrase required for '\(kw)'"))
             } else {
-                await MainActor.run { self.onEvent?(.sessionError(error)) }
+                self.onEvent?(.sessionError(error))
             }
         }
+    }
+
+    // MARK: - Grace-window lifecycle
+
+    /// Flip graceActive under the accumulator lock so the mic thread (which
+    /// reads it when classifying a cut) never sees a torn value.
+    private func setGraceActive(_ value: Bool) {
+        accumulatorLock.lock()
+        graceActive = value
+        accumulatorLock.unlock()
+    }
+
+    private func startGraceTimer() {
+        graceTimerTask?.cancel()
+        let window = continuationGraceWindow
+        graceTimerTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(window * 1_000_000_000))
+            guard let self = self, !Task.isCancelled else { return }
+            self.expireGrace()
+        }
+    }
+
+    /// Window elapsed with no resume and no reply audio yet (brain still
+    /// thinking). Fall back to normal half-duplex — mic deaf until the reply is
+    /// done; a later utterance becomes a fresh turn. If the user is actively
+    /// mid-continuation right now, DON'T slam the mic shut — extend the window
+    /// so the in-progress thought finishes and merges.
+    private func expireGrace() {
+        guard graceActive, !ttsStartedThisTurn else { return }
+        accumulatorLock.lock()
+        let speaking = inSpeech
+        accumulatorLock.unlock()
+        if speaking { startGraceTimer(); return }
+        setGraceActive(false)
+        isProcessing = true
+    }
+
+    /// Reply audio has started — close the window and go half-duplex for the
+    /// duration of playback. Idempotent. Abandons any half-captured resume
+    /// (rare: reply beat a mid-continuation utterance to the finish line).
+    private func closeGraceForPlayback() {
+        guard graceActive else { return }
+        setGraceActive(false)
+        graceTimerTask?.cancel(); graceTimerTask = nil
+        ttsStartedThisTurn = true
+        isProcessing = true
+        abandonInProgressCapture()
+    }
+
+    /// Turn is fully done (reply played, or errored). Clear turn state and
+    /// release the half-duplex gate once playback drains.
+    private func finishTurn() {
+        setGraceActive(false)
+        graceTimerTask?.cancel(); graceTimerTask = nil
+        inFlightTurnTask = nil
+        pendingTurnText = ""
+        ttsStartedThisTurn = false
+        releaseProcessingAfterDrain()
+    }
+
+    /// v0.2.20 drain behaviour, factored out of the old processUtterance defer:
+    /// hold isProcessing only until playerNode actually drains, polling every
+    /// 100ms, hard-capped at 2s so a stuck node can't latch the mic shut.
+    private func releaseProcessingAfterDrain() {
+        Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            let deadline = Date().addingTimeInterval(2.0)
+            while Date() < deadline && self.playerNode.isPlaying {
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+            self.isProcessing = false
+        }
+    }
+
+    /// Abandon a live recognizer / half-captured utterance (used when playback
+    /// forces the window shut mid-continuation).
+    private func abandonInProgressCapture() {
+        accumulatorLock.lock()
+        if inSpeech || streamingActive {
+            streamingActive = false
+            OnDeviceSTT.shared.cancelStreaming()
+            pcmAccumulator.removeAll(keepingCapacity: true)
+            resetUtteranceState()
+        }
+        accumulatorLock.unlock()
     }
 
     // MARK: - Streaming STT lifecycle
