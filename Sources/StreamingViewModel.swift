@@ -44,6 +44,19 @@ final class StreamingViewModel: ObservableObject {
     private var statusCancellable: AnyCancellable?
     private var liveActivityStarted = false
     private var currentAgentName: String = "Gemma"
+    /// True once a capture session's engine has actually started, false after
+    /// any stop/teardown/mute. Distinct from `session != nil` — the session
+    /// objects outlive a stop(); this tracks whether the mic is really hot.
+    private var isCapturing = false
+
+    /// A conversation is "active" only when the mic engine is running AND the
+    /// user hasn't muted — i.e. we are (or should be) holding the mic to
+    /// listen, carry a turn in flight, or play Gemma's reply. This is the sole
+    /// condition under which audio is KEPT alive across backgrounding (the
+    /// hands-free / locked-screen / car feature) and the sole condition under
+    /// which a foreground transition re-asserts the audio session. Muted or
+    /// not-yet-started = not active = release the mic + session + Live Activity.
+    private var conversationActive: Bool { isCapturing && !userMuted }
 
     init() {
         // JMM Tailscale IP, streaming server port 9201.
@@ -61,12 +74,32 @@ final class StreamingViewModel: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor in
                 guard let self = self else { return }
+                // Only re-assert the audio session when a conversation is
+                // genuinely active. Doing this unconditionally re-activated the
+                // session (and lit the mic) on every foreground of an idle/muted
+                // app — part of the "holds a hot mic when it shouldn't" bug.
+                guard self.conversationActive else { return }
                 try? AVAudioSession.sharedInstance().setActive(true)
                 // If a session is mid-flight, give it a chance to recover; the session's
                 // own foreground hook handles engine restart specifics.
                 self.session?.handleAppDidBecomeActive()
                 self.onDeviceSession?.handleAppDidBecomeActive()
             }
+        }
+
+        // Best-effort teardown if iOS terminates us. Unreliable on a suspended
+        // swipe-kill (the process may be killed outright), but when it does
+        // fire it releases the mic/session and ends the Live Activity so a kill
+        // leaves nothing hot behind. The reliable teardown is the scenePhase
+        // .background path (handleScenePhase) plus the resurrection guard in
+        // startSession() that stops a background-relaunched app grabbing the mic.
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.willTerminateNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self = self else { return }
+            MainActor.assumeIsolated { self.teardownAudio() }
         }
 
         // Push every status change to the Live Activity. The first non-muted
@@ -115,14 +148,16 @@ final class StreamingViewModel: ObservableObject {
 
     func toggleMute() {
         if userMuted {
+            // Unmute → re-acquire the mic and resume listening. Muting fully
+            // released the audio session (mic indicator off), so this rebuilds
+            // a fresh capture session rather than just flipping a deaf flag.
             userMuted = false
-            session?.unmute()
-            onDeviceSession?.unmute()
-            status = .listening
+            startSession()
         } else {
+            // Mute → release the mic entirely so the indicator goes dark, not
+            // just go deaf. Idle/muted must never hold a hot mic.
             userMuted = true
-            session?.mute()
-            onDeviceSession?.mute()
+            stopCapture()
             status = .muted
         }
     }
@@ -141,6 +176,12 @@ final class StreamingViewModel: ObservableObject {
     }
 
     private func startSession() {
+        // Never grab the mic while backgrounded. iOS resurrects a force-quit
+        // app in the BACKGROUND (applicationState == .background); this guard is
+        // what makes a resurrected/idle app hold NOTHING. A genuine foreground
+        // open re-drives this via ContentView.onAppear / scenePhase → .active.
+        guard UIApplication.shared.applicationState != .background else { return }
+
         // Snapshot toggle once at session start; mid-session switching is
         // out of scope for v0.2.16. Sherman flips → taps mute/unmute or
         // relaunches → engages the new path.
@@ -169,6 +210,7 @@ final class StreamingViewModel: ObservableObject {
                     do {
                         try self.onDeviceSession?.start()
                         self.onDeviceSession?.unmute()
+                        self.isCapturing = true
                         self.status = .listening
                     } catch {
                         self.errorMessage = "Mic error: \(error.localizedDescription)"
@@ -192,10 +234,58 @@ final class StreamingViewModel: ObservableObject {
         do {
             try session?.start()
             session?.unmute()
+            isCapturing = true
             status = .listening
         } catch {
             errorMessage = "Mic error: \(error.localizedDescription)"
             status = .muted
+        }
+    }
+
+    // MARK: - Lifecycle teardown / resume
+
+    /// Stop the mic + deactivate the audio session, releasing the mic
+    /// indicator. The session objects are dropped so the next start()
+    /// rebuilds a fresh AVAudioEngine (avoids re-attaching a node to an
+    /// already-attached engine on the mute→unmute cycle). Called on mute and
+    /// from teardownAudio.
+    private func stopCapture() {
+        session?.stop()
+        onDeviceSession?.stop()
+        session = nil
+        onDeviceSession = nil
+        isCapturing = false
+    }
+
+    /// Release the mic + audio session AND end the Live Activity. Called when
+    /// the app backgrounds/resigns without an active conversation, and on
+    /// termination — so a killed or backgrounded-idle app leaves nothing hot
+    /// and no lingering lock-screen / Dynamic Island indicator.
+    private func teardownAudio() {
+        stopCapture()
+        LiveActivityController.shared.end()
+        liveActivityStarted = false
+    }
+
+    /// Driven by the App's scenePhase observer.
+    /// - `.background` / `.inactive`: release everything UNLESS a conversation
+    ///   is active (the hands-free / locked-screen / car feature is kept alive).
+    /// - `.active`: if we're foreground, idle, and not muted, resume listening.
+    ///   This covers a resurrected app the user has now actually opened — the
+    ///   background relaunch grabbed nothing, and opening it starts a clean
+    ///   session.
+    func handleScenePhase(_ phase: ScenePhase) {
+        switch phase {
+        case .active:
+            if !isCapturing && !userMuted {
+                requestMicPermission()
+            }
+        case .background, .inactive:
+            if !conversationActive {
+                teardownAudio()
+            }
+        @unknown default:
+            break
         }
     }
 

@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct GemmaVoiceApp: App {
     @StateObject private var viewModel = StreamingViewModel()
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         // v0.2.16: rename AppStorage("onDeviceSTTFallback") -> "useOnDeviceSTT".
@@ -27,6 +28,18 @@ struct GemmaVoiceApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(viewModel)
+                // Lifecycle teardown. Without this a bare WindowGroup never
+                // tears the mic down on background/terminate, so a force-quit
+                // app that iOS resurrects in the background re-grabs a hot mic
+                // and re-shows its Live Activity. handleScenePhase releases the
+                // mic + audio session + Live Activity when there is NO active
+                // conversation, and (on foreground) resumes listening if we're
+                // idle. An active conversation (unmuted-listening / turn in
+                // flight) is deliberately KEPT alive across backgrounding so
+                // the hands-free / locked-screen / car use still works.
+                .onChange(of: scenePhase) { _, newPhase in
+                    viewModel.handleScenePhase(newPhase)
+                }
         }
     }
 }

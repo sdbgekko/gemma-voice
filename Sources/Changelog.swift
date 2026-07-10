@@ -12,6 +12,15 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.27",
+            date: "Jul 10",
+            hints: [
+                "Closing the app now actually closes it. If you swipe GemmaVoice away, it fully stops and lets go of the microphone — no more coming back to life in the background with the mic light stuck on. That orange dot means the mic is truly in use, and now it goes dark when it should.",
+                "Muting fully releases the microphone now, not just silences it — so the mic indicator turns off when you mute.",
+                "On purpose: if you're mid-conversation and lock the screen or switch apps, she keeps listening — that hands-free/in-the-car behavior is intentional and unchanged.",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.26",
             date: "Jul 9",
             hints: [
