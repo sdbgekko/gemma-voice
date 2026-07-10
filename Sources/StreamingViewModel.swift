@@ -175,12 +175,45 @@ final class StreamingViewModel: ObservableObject {
         session?.reconnectNow()
     }
 
+    // MARK: - Voice enrollment mic handoff (0.2.30)
+    //
+    // The enrollment recorder (VoiceEnrollmentView) needs the mic to itself,
+    // so the live conversation session is fully stopped while the enrollment
+    // screen is open and restarted when it closes — but only if it was
+    // running before. `enrollmentInProgress` also blocks the scene-phase
+    // .active auto-restart from re-grabbing the mic mid-enrollment (e.g. the
+    // user backgrounds and foregrounds the app between clips).
+
+    private var enrollmentInProgress = false
+    private var resumeAfterEnrollment = false
+
+    func beginEnrollment() {
+        guard !enrollmentInProgress else { return }
+        enrollmentInProgress = true
+        resumeAfterEnrollment = conversationActive
+        stopCapture()
+        if !userMuted { status = .muted }
+    }
+
+    func endEnrollment() {
+        guard enrollmentInProgress else { return }
+        enrollmentInProgress = false
+        if resumeAfterEnrollment {
+            resumeAfterEnrollment = false
+            startSession()
+        }
+    }
+
     private func startSession() {
         // Never grab the mic while backgrounded. iOS resurrects a force-quit
         // app in the BACKGROUND (applicationState == .background); this guard is
         // what makes a resurrected/idle app hold NOTHING. A genuine foreground
         // open re-drives this via ContentView.onAppear / scenePhase → .active.
         guard UIApplication.shared.applicationState != .background else { return }
+
+        // Enrollment owns the mic while its screen is open — endEnrollment()
+        // is the only way back into a live session.
+        guard !enrollmentInProgress else { return }
 
         // Snapshot toggle once at session start; mid-session switching is
         // out of scope for v0.2.16. Sherman flips → taps mute/unmute or

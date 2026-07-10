@@ -90,6 +90,19 @@ struct SettingsView: View {
                         Text(err).font(.caption).foregroundStyle(.red)
                     }
                 }
+                Section("Voice Enrollment") {
+                    NavigationLink {
+                        VoiceEnrollmentView()
+                    } label: {
+                        HStack {
+                            Image(systemName: "person.wave.2.fill")
+                            Text("Enroll a voice")
+                        }
+                    }
+                    Text("Record 8 short clips so Gemma learns who's talking. While enrolling, the live conversation is paused; it resumes when you leave the enrollment screen.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Section("Security") {
                     NavigationLink {
                         VoiceAuthSetupView()

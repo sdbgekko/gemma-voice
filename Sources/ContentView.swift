@@ -27,7 +27,11 @@ struct ContentView: View {
         .preferredColorScheme(preferredScheme)
         .onAppear { viewModel.requestMicPermission() }
         .sheet(isPresented: $showSettings) {
+            // Explicit injection: the enrollment flow inside Settings needs the
+            // view model to pause/resume the live session, and sheets don't
+            // reliably inherit environment objects across all iOS versions.
             SettingsView(appearance: $appearance)
+                .environmentObject(viewModel)
         }
     }
 

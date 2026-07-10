@@ -7,10 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		09643E533C6B5239D1486ED1 /* VoiceEnrollmentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 900C6E0BA6DE932F4AF9F086 /* VoiceEnrollmentView.swift */; };
 		0FAE1BADB6DD3097BE0CE9FA /* StreamingViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5886E5F151902131B1C214D /* StreamingViewModel.swift */; };
 		1F9CE56357F6520B8C9A3C3A /* AudioPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4FD7C7680847FDA53221FF1 /* AudioPlayer.swift */; };
 		2510B64B3DB18F0CC24D7174 /* GemmaVoiceWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 459DFF39F43E10B8033E48FA /* GemmaVoiceWidgets.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		269453F879A2BD7EECE5774D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 161B6A8D1B9F353B4DBEFA99 /* Assets.xcassets */; };
+		28E59ABE6DFB294C1EC2324D /* VoiceEnrollClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D4BBDA96F7C5F4C8F7B1F1A /* VoiceEnrollClient.swift */; };
 		2EAD18E84643F22940A548D8 /* Changelog.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2FFFCB18AF2902CE7DD39FB /* Changelog.swift */; };
 		4454328DB8B78B9CB6C62396 /* GemmaVoiceLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57ED71D5A6411BDF3D73C5C /* GemmaVoiceLiveActivity.swift */; };
 		4CD2F32CD51A0ED3C2E62066 /* LiveActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 817BAD4EC8A33CC5333DEFFF /* LiveActivityAttributes.swift */; };
@@ -96,9 +98,11 @@
 		65084D5F1C669037DFC39BB8 /* OnDeviceSTT.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnDeviceSTT.swift; sourceTree = "<group>"; };
 		792411C73D8340A3122B4CBD /* LiveActivityController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityController.swift; sourceTree = "<group>"; };
 		817BAD4EC8A33CC5333DEFFF /* LiveActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityAttributes.swift; sourceTree = "<group>"; };
+		900C6E0BA6DE932F4AF9F086 /* VoiceEnrollmentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceEnrollmentView.swift; sourceTree = "<group>"; };
 		917687C6344D613AAF20EC9E /* TranscriptPostProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptPostProcessor.swift; sourceTree = "<group>"; };
 		96770E5AAD35DE9C6B709A1F /* WatchBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchBridge.swift; sourceTree = "<group>"; };
 		9CD6FF746303C5E6A90C5085 /* ViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModel.swift; sourceTree = "<group>"; };
+		9D4BBDA96F7C5F4C8F7B1F1A /* VoiceEnrollClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceEnrollClient.swift; sourceTree = "<group>"; };
 		A57ED71D5A6411BDF3D73C5C /* GemmaVoiceLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GemmaVoiceLiveActivity.swift; sourceTree = "<group>"; };
 		AEC00FA2E266E16D066BE509 /* TurnCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TurnCardView.swift; sourceTree = "<group>"; };
 		B015275E89C8C9573430EFFC /* VoiceAuthSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAuthSetupView.swift; sourceTree = "<group>"; };
@@ -186,6 +190,8 @@
 				9CD6FF746303C5E6A90C5085 /* ViewModel.swift */,
 				433C994C01D5D47EFA5F99FC /* VoiceAuthSecret.swift */,
 				B015275E89C8C9573430EFFC /* VoiceAuthSetupView.swift */,
+				9D4BBDA96F7C5F4C8F7B1F1A /* VoiceEnrollClient.swift */,
+				900C6E0BA6DE932F4AF9F086 /* VoiceEnrollmentView.swift */,
 				96770E5AAD35DE9C6B709A1F /* WatchBridge.swift */,
 			);
 			path = Sources;
@@ -382,6 +388,8 @@
 				EE275C7947985C52B4CD46BB /* ViewModel.swift in Sources */,
 				78C912E5646CD8EB9EA2981F /* VoiceAuthSecret.swift in Sources */,
 				B93B97F7721D991AB90B0507 /* VoiceAuthSetupView.swift in Sources */,
+				28E59ABE6DFB294C1EC2324D /* VoiceEnrollClient.swift in Sources */,
+				09643E533C6B5239D1486ED1 /* VoiceEnrollmentView.swift in Sources */,
 				D15036A95171665D0E3914E1 /* WatchBridge.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
