@@ -150,6 +150,24 @@ final class OnDeviceConversationSession: NSObject {
     /// same off-thread-read posture as isProcessing.
     private var micHotAfter = Date.distantPast
 
+    // MARK: Per-turn speaker verification (0.2.31)
+    //
+    // The on-device STT path posts TEXT only, so the server's enrolled-
+    // voiceprint engine never hears the audio. Attach the utterance's 16kHz
+    // mono PCM16 as a base64 WAV to each /text_turn so the server can verify
+    // who's speaking (SPEAKER_ID_MODE shadow/tag on the voice-turn server).
+
+    /// Speaker-ID clip cap: 15s at 16kHz. Keeps the WAV ≈480KB (≈640KB as
+    /// base64) — well under the ~2MB request budget.
+    private let maxSpeakerClipSamples = 15 * 16_000
+    /// Utterance PCM snapshotted at the VAD/force cut, before pcmAccumulator
+    /// is cleared. Guarded by accumulatorLock; claimed by handleUtteranceCut.
+    private var lastCutPCM: [Float] = []
+    /// Audio backing pendingTurnText — the open turn's fragment(s). A
+    /// continuation APPENDS its fragment so a merged re-send carries the
+    /// CONCATENATED audio of both fragments (capped at maxSpeakerClipSamples).
+    private var pendingTurnAudio: [Float] = []
+
     // Networking — injected so tests can swap a mock.
     private let textTurnClient: TextTurnClientProtocol
     /// Stable session id sent to the server with each turn for log
@@ -223,6 +241,7 @@ final class OnDeviceConversationSession: NSObject {
         inFlightTurnTask?.cancel(); inFlightTurnTask = nil
         setGraceActive(false)
         pendingTurnText = ""
+        pendingTurnAudio = []
         ttsStartedThisTurn = false
         isProcessing = false
         micHotAfter = .distantPast
@@ -236,6 +255,7 @@ final class OnDeviceConversationSession: NSObject {
         isRunning = false
         accumulatorLock.lock()
         pcmAccumulator.removeAll(keepingCapacity: false)
+        lastCutPCM.removeAll(keepingCapacity: false)
         silenceFrameCount = 0
         speechFrameCount = 0
         inSpeech = false
@@ -270,6 +290,9 @@ final class OnDeviceConversationSession: NSObject {
             accumulatorLock.unlock()
             return
         }
+        // Snapshot the utterance audio for per-turn speaker verification
+        // before the accumulator is cleared (same as the VAD-cut path).
+        lastCutPCM = pcmAccumulator
         pcmAccumulator.removeAll(keepingCapacity: true)
         silenceFrameCount = 0
         speechFrameCount = 0
@@ -362,6 +385,9 @@ final class OnDeviceConversationSession: NSObject {
                     // drains to its final while handleUtteranceCut awaits it.
                     streamingActive = false
                     OnDeviceSTT.shared.endStreaming()
+                    // Snapshot the utterance audio for per-turn speaker
+                    // verification before the accumulator is cleared.
+                    lastCutPCM = pcmAccumulator
                     pcmAccumulator.removeAll(keepingCapacity: true)
                     resetUtteranceState()
                     accumulatorLock.unlock()
@@ -407,6 +433,11 @@ final class OnDeviceConversationSession: NSObject {
     /// MERGE this fragment into it — cancelling the in-flight request and
     /// re-sending the combined text as the same turn.
     private func handleUtteranceCut() async {
+        // Claim the just-cut utterance audio (snapshotted under the lock at
+        // the cut) as this turn's speaker-verification fragment. Claimed up
+        // front so an empty/errored transcript discards it rather than letting
+        // it leak into a later turn.
+        let fragmentPCM = claimCutPCM()
         // The recognizer has been fed live during speech and endStreaming() was
         // called at the cut; await its drained final (~100-300ms) rather than
         // transcribing a cold full-utterance batch here.
@@ -437,11 +468,14 @@ final class OnDeviceConversationSession: NSObject {
             inFlightTurnTask?.cancel()
             let combined = pendingTurnText.isEmpty ? polished : pendingTurnText + " " + polished
             pendingTurnText = combined
+            // Merged re-send carries the CONCATENATED audio of both fragments.
+            pendingTurnAudio = Array((pendingTurnAudio + fragmentPCM).prefix(maxSpeakerClipSamples))
             self.onEvent?(.transcriptContinued(combined))
             sendTurn(text: combined)
         } else {
             // FRESH turn.
             pendingTurnText = polished
+            pendingTurnAudio = Array(fragmentPCM.prefix(maxSpeakerClipSamples))
             self.onEvent?(.transcriptYou(polished))
             sendTurn(text: polished)
         }
@@ -469,11 +503,15 @@ final class OnDeviceConversationSession: NSObject {
     /// silently if a continuation cancelled it mid-flight — the merged re-send
     /// now owns the turn.
     private func performRequest(_ text: String) async {
+        // Build the speaker-verification WAV from the open turn's audio at
+        // send time — a merged re-send therefore carries both fragments.
+        let wavBase64 = Self.speakerClipBase64(fromPCM: pendingTurnAudio)
         do {
             let result = try await textTurnClient.postText(
                 text,
                 speakerHint: "sherman",
                 sessionId: sessionId,
+                wavBase64: wavBase64,
                 onAudioChunk: { [weak self] chunk in
                     guard let self = self else { return }
                     // First reply audio = she's answering. Go half-duplex
@@ -560,6 +598,7 @@ final class OnDeviceConversationSession: NSObject {
         graceTimerTask?.cancel(); graceTimerTask = nil
         inFlightTurnTask = nil
         pendingTurnText = ""
+        pendingTurnAudio = []
         ttsStartedThisTurn = false
         releaseProcessingAfterDrain()
     }
@@ -644,6 +683,32 @@ final class OnDeviceConversationSession: NSObject {
         return TranscriptPostProcessor.polish(text)
     }
 
+    /// Take-and-clear the utterance PCM snapshotted at the cut. Synchronous so
+    /// the NSLock stays out of async contexts (a Swift 6 error otherwise);
+    /// called from handleUtteranceCut on the main actor.
+    private func claimCutPCM() -> [Float] {
+        accumulatorLock.lock()
+        defer { accumulatorLock.unlock() }
+        let pcm = lastCutPCM
+        lastCutPCM = []
+        return pcm
+    }
+
+    /// Pack float32 [-1,1] samples into a base64 16kHz mono PCM16 WAV for the
+    /// /text_turn `wav_base64` field — same WAV builder the enrollment flow
+    /// uses (AudioRecorder.wavData). Returns nil when there is no audio.
+    private static func speakerClipBase64(fromPCM pcm: [Float]) -> String? {
+        guard !pcm.isEmpty else { return nil }
+        var samples = [Int16](repeating: 0, count: pcm.count)
+        for i in 0..<pcm.count {
+            let clamped = max(-1.0, min(1.0, pcm[i]))
+            samples[i] = Int16(clamped * 32767)
+        }
+        let pcmData = samples.withUnsafeBufferPointer { Data(buffer: $0) }
+        let wav = AudioRecorder.wavData(pcm16: pcmData, sampleRate: 16_000, channels: 1)
+        return wav.base64EncodedString()
+    }
+
     // MARK: - TTS playback
 
     private func scheduleTTSChunk(_ data: Data) {
@@ -704,10 +769,13 @@ final class OnDeviceConversationSession: NSObject {
 protocol TextTurnClientProtocol {
     /// POST text to /text_turn and stream the PCM reply via onAudioChunk
     /// as it arrives. Returns the reply text (from the X-Reply-Text header).
+    /// wavBase64 (0.2.31) is the utterance audio as a base64 16kHz mono
+    /// PCM16 WAV for server-side speaker verification; nil omits the field.
     func postText(
         _ text: String,
         speakerHint: String,
         sessionId: String,
+        wavBase64: String?,
         onAudioChunk: @escaping (Data) -> Void
     ) async throws -> TextTurnResult
 }
@@ -722,6 +790,7 @@ struct StubTextTurnClient: TextTurnClientProtocol {
     func postText(_ text: String,
                   speakerHint: String,
                   sessionId: String,
+                  wavBase64: String?,
                   onAudioChunk: @escaping (Data) -> Void) async throws -> TextTurnResult {
         throw NSError(
             domain: "OnDeviceConversation",

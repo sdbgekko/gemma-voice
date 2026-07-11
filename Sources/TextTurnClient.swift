@@ -78,16 +78,23 @@ final class TextTurnClient: TextTurnClientProtocol {
         _ text: String,
         speakerHint: String,
         sessionId: String,
+        wavBase64: String?,
         onAudioChunk: @escaping (Data) -> Void
     ) async throws -> TextTurnResult {
         var req = URLRequest(url: baseURL.appendingPathComponent("text_turn"))
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let payload: [String: String] = [
+        var payload: [String: String] = [
             "text": text,
             "speaker_hint": speakerHint,
             "session_id": sessionId,
         ]
+        // Per-turn speaker verification (0.2.31): the utterance audio as a
+        // base64 16kHz mono PCM16 WAV. Optional — the server behaves exactly
+        // as before when the field is absent.
+        if let wavBase64 {
+            payload["wav_base64"] = wavBase64
+        }
         let bodyData = try JSONSerialization.data(withJSONObject: payload)
         req.httpBody = bodyData
 
