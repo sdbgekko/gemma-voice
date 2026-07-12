@@ -342,6 +342,14 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
         sendControl(["type": "force_cut"])
     }
 
+    /// User swiped away the in-flight turn (a mis-captured cough/"mm-hmm"):
+    /// stop its TTS locally and tell the server to flush the rest of the reply.
+    /// Reuses the barge-in interrupt path — the mic/socket stay up, only this
+    /// turn's playback/stream is killed.
+    func cancelInFlightTurn() {
+        triggerBargeIn()
+    }
+
     /// Barge-in: user spoke over Gemma's TTS. Stop local playback immediately
     /// and tell the server to flush the rest of the in-flight TTS stream.
     /// Must hop to main before touching playerNode — AVAudioEngine nodes are

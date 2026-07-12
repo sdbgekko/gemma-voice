@@ -280,6 +280,27 @@ final class OnDeviceConversationSession: NSObject {
         pendingStreamResult = nil
     }
 
+    /// User swiped away the in-flight turn: kill just this turn's work — the
+    /// request task (0.2.29) and any late-reply fetch (0.2.32) — and stop the
+    /// TTS still playing for it, WITHOUT tearing down the mic/engine. The
+    /// session keeps listening; only the one turn the session is working on is
+    /// cancelled. A cancelled inFlightTurnTask makes performRequest bail before
+    /// emitting transcriptGemma/ttsEnd, so no late events touch the ledger.
+    func cancelInFlightTurn() {
+        inFlightTurnTask?.cancel(); inFlightTurnTask = nil
+        lateReplyTask?.cancel(); lateReplyTask = nil
+        graceTimerTask?.cancel(); graceTimerTask = nil
+        setGraceActive(false)
+        pendingTurnText = ""
+        pendingTurnAudio = []
+        ttsStartedThisTurn = false
+        // Stop this turn's TTS and release the half-duplex gate so the mic
+        // reopens immediately (a no-op if nothing was playing).
+        playerNode.stop()
+        playerNode.reset()
+        isProcessing = false
+    }
+
     /// v0.2.21 — re-assert session + engine on foreground. iOS may have deactivated
     /// during background; without this the playerNode has nothing to push frames into.
     func handleAppDidBecomeActive() {

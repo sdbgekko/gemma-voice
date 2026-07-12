@@ -113,8 +113,13 @@ struct ContentView: View {
                         emptyState
                     } else {
                         ForEach(viewModel.ledger) { turn in
-                            TurnCardView(turn: turn)
-                                .id(turn.id)
+                            SwipeToDeleteRow(turn: turn) {
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                                    viewModel.removeTurn(turn)
+                                }
+                            }
+                            .id(turn.id)
+                            .transition(.move(edge: .trailing).combined(with: .opacity))
                         }
                     }
                 }
@@ -218,6 +223,75 @@ struct ContentView: View {
 
 #Preview {
     ContentView().environmentObject(StreamingViewModel())
+}
+
+/// Wraps a ledger card with swipe-to-delete. Swiping the card LEFT past a
+/// threshold deletes it (and, if it's still in flight, kills its work — see
+/// `StreamingViewModel.removeTurn`); a short swipe springs back. `TurnCardView`
+/// is used unchanged — this only adds the reveal + gesture.
+///
+/// Approach (a): a custom horizontal drag, NOT a `List`/`.swipeActions` refactor.
+/// The ledger is a `LazyVStack` inside a `ScrollView` with a `ScrollViewReader`
+/// scroll-to-latest, a GoldGemma empty-state hero, and a bespoke card look;
+/// moving to a `List` would disturb all three (row insets/separators, List's
+/// own scroll semantics) for no visual gain. A drag keeps the card pixel-identical.
+private struct SwipeToDeleteRow: View {
+    let turn: LedgerTurn
+    let onDelete: () -> Void
+
+    @State private var offset: CGFloat = 0
+
+    // Swipe at least this far left (on release) to commit the delete.
+    private let deleteThreshold: CGFloat = 110
+    // Cap the live reveal so the card can't be dragged clear off-screen.
+    private let maxReveal: CGFloat = 132
+
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            deleteAffordance
+            TurnCardView(turn: turn)
+                .offset(x: offset)
+                .gesture(
+                    DragGesture(minimumDistance: 12)
+                        .onChanged { value in
+                            let dx = value.translation.width
+                            // Left drags only, and only when the drag is clearly
+                            // horizontal — vertical-dominant drags stay with the
+                            // ScrollView so scrolling isn't hijacked.
+                            if dx < 0, abs(dx) > abs(value.translation.height) {
+                                offset = max(dx, -maxReveal)
+                            }
+                        }
+                        .onEnded { value in
+                            let dx = value.translation.width
+                            if dx <= -deleteThreshold, abs(dx) > abs(value.translation.height) {
+                                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                                onDelete()   // parent animates the row out
+                            } else {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                    offset = 0
+                                }
+                            }
+                        }
+                )
+        }
+    }
+
+    /// Red delete panel revealed behind the card as it slides left. Fades in
+    /// with the swipe so it reads as "keep going to delete".
+    private var deleteAffordance: some View {
+        RoundedRectangle(cornerRadius: 16)
+            .fill(Color.red)
+            .overlay(
+                Image(systemName: "trash.fill")
+                    .font(.title3)
+                    .foregroundColor(.white)
+                    .padding(.trailing, 24),
+                alignment: .trailing
+            )
+            .opacity(Double(min(1, -offset / deleteThreshold)))
+            .accessibilityHidden(true)
+    }
 }
 
 struct WaveformView: View {

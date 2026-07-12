@@ -606,4 +606,50 @@ final class StreamingViewModel: ObservableObject {
         guard let i = latestPendingIndex else { return }
         ledger[i].phase = .dropped(reason)
     }
+
+    // MARK: - Swipe-to-delete (0.2.33)
+
+    /// Remove a turn card the user swiped away — a mis-captured cough, "mm-hmm",
+    /// or an answered turn they're done with. Keeps `transcript` (the WatchBridge
+    /// feed) consistent. If the card is the one turn still IN FLIGHT, also kills
+    /// that turn's server/request work + stops its audio so nothing keeps
+    /// processing a turn the user just deleted. Other turns and the mic/session
+    /// are untouched.
+    func removeTurn(_ turn: LedgerTurn) {
+        guard let idx = ledger.firstIndex(where: { $0.id == turn.id }) else { return }
+        // In serial v1 the session tracks exactly ONE in-flight turn, and it is
+        // always the newest non-terminal card (== latestPendingIndex). Only
+        // cancel session work when the deleted card IS that turn — deleting a
+        // stale/terminal card must never abort the live turn.
+        let isInFlight = (idx == latestPendingIndex)
+        if isInFlight {
+            session?.cancelInFlightTurn()
+            onDeviceSession?.cancelInFlightTurn()
+            // The turn is gone — drop the dock out of thinking/speaking back to
+            // a live listening state (sticky mute wins).
+            if !userMuted,
+               status == .thinking || status == .playing || status == .heardYou {
+                status = .listening
+            }
+        }
+        // Keep the plain transcript (and thus the Watch feed) consistent: drop
+        // this turn's user line and reply line if they're present.
+        removeFromTranscript(matching: ledger[idx])
+        ledger.remove(at: idx)
+    }
+
+    /// Drop the transcript entries that correspond to a deleted ledger card.
+    /// Matches on text (serial v1 has no shared id between the two models), so
+    /// it removes the most-recent user turn saying the same words and the
+    /// most-recent Gemma turn with the same reply.
+    private func removeFromTranscript(matching card: LedgerTurn) {
+        if !card.youText.isEmpty,
+           let ui = transcript.lastIndex(where: { !$0.isGemma && $0.text == card.youText }) {
+            transcript.remove(at: ui)
+        }
+        if let reply = card.reply, !reply.isEmpty,
+           let gi = transcript.lastIndex(where: { $0.isGemma && $0.text == reply }) {
+            transcript.remove(at: gi)
+        }
+    }
 }
