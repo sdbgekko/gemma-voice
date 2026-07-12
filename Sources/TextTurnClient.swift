@@ -149,7 +149,15 @@ final class TextTurnClient: TextTurnClientProtocol {
 
         // Reply text is in the X-Reply-Text header (ASCII-clean,
         // length-capped at 512 by the server). The body is raw PCM.
+        // In sentence-streaming mode the header can't carry the reply (it's
+        // sent before the reply text exists), so X-Reply-Text is ABSENT and
+        // this is empty — the reply is fetched afterwards via /reply_text
+        // keyed on X-Turn-Id below.
         let replyText = (http.value(forHTTPHeaderField: "X-Reply-Text") ?? "").trimmingCharacters(in: .whitespaces)
+        // X-Turn-Id: the server-minted request id, present on every response
+        // (streaming and classic). Used to fetch the reply text after the
+        // audio finishes when X-Reply-Text was absent.
+        let turnId = (http.value(forHTTPHeaderField: "X-Turn-Id") ?? "").trimmingCharacters(in: .whitespaces)
 
         // Stream PCM bytes to caller in ~32ms-equivalent chunks. Kokoro
         // emits 24kHz int16 mono = 48000 bytes/sec, so a 1024-byte chunk
@@ -172,6 +180,33 @@ final class TextTurnClient: TextTurnClientProtocol {
             if n > 0 { onAudioChunk(pending.prefix(n)) }
         }
 
-        return TextTurnResult(replyText: replyText)
+        return TextTurnResult(replyText: replyText, rid: turnId.isEmpty ? nil : turnId)
+    }
+
+    /// Fetch the full reply text for a completed turn from the server's
+    /// GET /reply_text?rid=<rid> endpoint. Returns the reply once ready, or
+    /// nil if the server reports it isn't ready yet ({"reply": null}) or the
+    /// rid is unknown. Read-only, no HMAC — the rid is an opaque server-minted
+    /// uuid. Used by the streaming path to backfill the Gemma text card after
+    /// the audio has played, since X-Reply-Text was absent on the turn.
+    func fetchReplyText(rid: String) async throws -> String? {
+        guard var comps = URLComponents(
+            url: baseURL.appendingPathComponent("reply_text"),
+            resolvingAgainstBaseURL: false
+        ) else { return nil }
+        comps.queryItems = [URLQueryItem(name: "rid", value: rid)]
+        guard let url = comps.url else { return nil }
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        let (data, response) = try await session.data(for: req)
+        guard let http = response as? HTTPURLResponse,
+              (200..<300).contains(http.statusCode) else {
+            return nil
+        }
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        // {"reply": "<text>"} → the string; {"reply": null} → NSNull → nil.
+        return json["reply"] as? String
     }
 }

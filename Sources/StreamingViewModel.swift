@@ -370,6 +370,14 @@ final class StreamingViewModel: ObservableObject {
                 ledgerSetReply(text, source: "gemma")
             }
             if !userMuted { status = .playing }
+        case .replyTextLate(let text):
+            // Streaming path: reply text arrived after the audio (and after
+            // ttsEnd already moved the card to .answered). Backfill the card's
+            // Gemma text without touching status/phase.
+            if !text.isEmpty {
+                appendTurn(text: text, isGemma: true, source: "gemma", speaker: nil)
+                ledgerBackfillReply(text)
+            }
         case .ttsEnd:
             ledgerAnswered()
             if userMuted {
@@ -579,6 +587,19 @@ final class StreamingViewModel: ObservableObject {
         guard let i = latestPendingIndex else { return }
         ledger[i].phase = .answered
         ledger[i].answeredAt = Date()
+    }
+
+    /// Streaming path (0.2.32): fill the reply on an already-.answered card.
+    /// The streaming turn had no reply text at ttsEnd, so the card reached
+    /// .answered with reply == nil; latestPendingIndex (which skips terminal
+    /// phases) can't see it. Target the newest answered card still missing its
+    /// reply — strictly serial, so that's the turn whose audio just finished.
+    private func ledgerBackfillReply(_ text: String) {
+        guard let i = ledger.lastIndex(where: { turn in
+            turn.phase == .answered && turn.reply == nil
+        }) else { return }
+        ledger[i].reply = text
+        ledger[i].source = "gemma"
     }
 
     private func ledgerDropped(_ reason: String) {

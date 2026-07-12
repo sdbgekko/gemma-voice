@@ -38,6 +38,10 @@ final class OnDeviceConversationSession: NSObject {
         /// The ledger card grows in place rather than a second card appearing.
         case transcriptContinued(String)
         case transcriptGemma(String)
+        /// Streaming path only (0.2.32): the reply text arrived AFTER the audio
+        /// (fetched via /reply_text once ttsEnd already closed the turn). The
+        /// UI backfills the already-answered card's Gemma text with this.
+        case replyTextLate(String)
         case ttsEnd
         case dropped(String)
         case sessionError(Error)
@@ -142,6 +146,11 @@ final class OnDeviceConversationSession: NSObject {
     /// Fires continuationGraceWindow after a send; closes the window if no
     /// resume and no reply-audio arrived (falls back to half-duplex).
     private var graceTimerTask: Task<Void, Never>?
+    /// Streaming path (0.2.32): after a turn's audio finishes with no reply
+    /// text in the header, this task polls GET /reply_text to backfill the
+    /// Gemma text card. Cancelled on stop() so a teardown can't fire a late
+    /// event into a dead session.
+    private var lateReplyTask: Task<Void, Never>?
     /// Set once the open turn's reply audio has begun — guards the grace/expiry
     /// paths from reopening the mic after playback has started.
     private var ttsStartedThisTurn = false
@@ -239,6 +248,7 @@ final class OnDeviceConversationSession: NSObject {
         // never leave the mic hot or a request running past the conversation.
         graceTimerTask?.cancel(); graceTimerTask = nil
         inFlightTurnTask?.cancel(); inFlightTurnTask = nil
+        lateReplyTask?.cancel(); lateReplyTask = nil
         setGraceActive(false)
         pendingTurnText = ""
         pendingTurnAudio = []
@@ -526,9 +536,26 @@ final class OnDeviceConversationSession: NSObject {
                 }
             )
             if Task.isCancelled { return }
-            self.onEvent?(.transcriptGemma(result.replyText))
-            self.onEvent?(.ttsEnd)
-            finishTurn()
+            if !result.replyText.isEmpty {
+                // Classic path: the reply came back in the X-Reply-Text header.
+                // Show it immediately, exactly as before.
+                self.onEvent?(.transcriptGemma(result.replyText))
+                self.onEvent?(.ttsEnd)
+                finishTurn()
+            } else if let rid = result.rid, !rid.isEmpty {
+                // Streaming path: the header carried no reply text (it's sent
+                // before the reply exists). Complete the turn's audio FIRST so
+                // the mic reopens without waiting on the text, then fetch the
+                // reply and backfill the card. Don't block audio on the fetch.
+                self.onEvent?(.ttsEnd)
+                finishTurn()
+                fetchLateReply(rid: rid)
+            } else {
+                // No reply text and no rid to fetch one — still end the turn
+                // cleanly (parity with the old empty-header no-op).
+                self.onEvent?(.ttsEnd)
+                finishTurn()
+            }
         } catch is CancellationError {
             return
         } catch {
@@ -540,6 +567,35 @@ final class OnDeviceConversationSession: NSObject {
                 self.onEvent?(.dropped("passphrase required for '\(kw)'"))
             } else {
                 self.onEvent?(.sessionError(error))
+            }
+        }
+    }
+
+    /// Streaming path (0.2.32): the turn's audio has finished but the reply
+    /// text wasn't in the response header. Poll GET /reply_text?rid a few times
+    /// (the text lands within a sentence or two of audio end) and, once it's
+    /// non-null, emit .replyTextLate so the UI backfills the answered card.
+    /// Runs detached from the turn's request task — audio already played, so
+    /// nothing here blocks playback or the mic. Cancelled on stop().
+    private func fetchLateReply(rid: String) {
+        lateReplyTask?.cancel()
+        lateReplyTask = Task { [weak self] in
+            // Up to 3 attempts at ~400ms spacing. First try fires immediately;
+            // if the reply is still null we wait, then retry.
+            for attempt in 0..<3 {
+                if Task.isCancelled { return }
+                guard let self = self else { return }
+                if let reply = try? await self.textTurnClient.fetchReplyText(rid: rid),
+                   !reply.isEmpty {
+                    if Task.isCancelled { return }
+                    self.onEvent?(.replyTextLate(reply))
+                    return
+                }
+                // reply null / not ready — back off before the next try (skip
+                // the wait after the final attempt).
+                if attempt < 2 {
+                    try? await Task.sleep(nanoseconds: 400_000_000)
+                }
             }
         }
     }
@@ -778,10 +834,20 @@ protocol TextTurnClientProtocol {
         wavBase64: String?,
         onAudioChunk: @escaping (Data) -> Void
     ) async throws -> TextTurnResult
+
+    /// Fetch the full reply text for a completed turn keyed on the server's
+    /// X-Turn-Id (0.2.32). Returns nil when the reply isn't ready yet or the
+    /// rid is unknown. Used only on the streaming path, where X-Reply-Text
+    /// (→ replyText) came back empty.
+    func fetchReplyText(rid: String) async throws -> String?
 }
 
 struct TextTurnResult {
     let replyText: String
+    /// Server-minted turn id (X-Turn-Id header). Present on every response;
+    /// nil only if the header was missing. On the streaming path replyText is
+    /// empty and the reply is fetched afterwards via fetchReplyText(rid:).
+    let rid: String?
 }
 
 /// Inert default client used if nothing else is wired. Returns a friendly
@@ -798,4 +864,6 @@ struct StubTextTurnClient: TextTurnClientProtocol {
             userInfo: [NSLocalizedDescriptionKey: "TextTurnClient not wired (see commit 3)"]
         )
     }
+
+    func fetchReplyText(rid: String) async throws -> String? { nil }
 }
