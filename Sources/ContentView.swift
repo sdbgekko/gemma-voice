@@ -213,18 +213,15 @@ struct ContentView: View {
     /// the mute button holds the primary emphasis. Independent of the mic.
     private var speakerButton: some View {
         Button(action: { viewModel.toggleSpeaker() }) {
-            VStack(spacing: 2) {
-                Image(systemName: viewModel.speakerOn ? "speaker.wave.2.fill" : "speaker.slash.fill")
-                    .font(.headline)
-                Text(viewModel.speakerOn ? "Sound" : "Silent")
-                    .font(.caption2.weight(.semibold))
-            }
-            .foregroundColor(viewModel.speakerOn ? .primary : .secondary)
-            .frame(width: 84, height: 52)
-            .background(Color(.tertiarySystemFill))
-            .cornerRadius(14)
+            Image(systemName: viewModel.speakerOn ? "speaker.wave.2.fill" : "speaker.slash.fill")
+                .font(.title2)
+                .foregroundColor(viewModel.speakerOn ? .primary : .secondary)
+                .frame(width: 64, height: 52)
+                .background(Color(.tertiarySystemFill))
+                .cornerRadius(14)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(viewModel.speakerOn ? "Silence Gemma's voice" : "Turn Gemma's voice on")
         .accessibilityLabel(viewModel.speakerOn
             ? "Speaker on. Tap to silence Gemma's voice."
             : "Speaker off. Tap to hear Gemma's voice.")
