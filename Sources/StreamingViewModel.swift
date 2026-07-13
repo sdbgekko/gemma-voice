@@ -146,20 +146,50 @@ final class StreamingViewModel: ObservableObject {
         }
     }
 
+    /// MUTE = MIC ONLY (feedback_mute_cuts_mic_only_hard_rule). The mute button
+    /// releases ONLY the mic input. It must NEVER stop the session, orphan an
+    /// in-flight utterance, or kill in-progress TTS. The decision + the session
+    /// effect run through MuteLogic / MuteAction, the same code the regression
+    /// self-test pins (see MuteSelfTest.swift). `stopCapture()`'s full teardown
+    /// is reserved for background/terminate (teardownAudio) and enrollment —
+    /// never wired here.
     func toggleMute() {
-        if userMuted {
-            // Unmute → re-acquire the mic and resume listening. Muting fully
-            // released the audio session (mic indicator off), so this rebuilds
-            // a fresh capture session rather than just flipping a deaf flag.
+        let action = MuteLogic.actionForToggle(
+            currentlyMuted: userMuted,
+            sessionAlive: (session != nil) || (onDeviceSession != nil)
+        )
+        switch action {
+        case .muteMicOnly:
+            // Finalize any in-flight utterance so it still gets a reply, release
+            // ONLY the mic input (orange dot dark), keep the session + any
+            // playing reply ALIVE. Mic is no longer hot (isCapturing=false) but
+            // the session object is deliberately kept (not nil'd).
+            userMuted = true
+            micSessions.forEach { action.applySessionEffect(to: $0) }
+            isCapturing = false
+            status = .muted
+        case .unmuteReArm:
+            // Re-acquire the mic on the still-alive session — no rebuild.
+            userMuted = false
+            micSessions.forEach { action.applySessionEffect(to: $0) }
+            isCapturing = true
+            status = .listening
+        case .unmuteColdStart:
+            // Session was fully torn down while muted (e.g. backgrounded) —
+            // rebuild a fresh capture session.
             userMuted = false
             startSession()
-        } else {
-            // Mute → release the mic entirely so the indicator goes dark, not
-            // just go deaf. Idle/muted must never hold a hot mic.
-            userMuted = true
-            stopCapture()
-            status = .muted
         }
+    }
+
+    /// The live mic sessions, as the mute contract's protocol type, so
+    /// `MuteAction.applySessionEffect` drives them exactly as it drives the
+    /// self-test spy.
+    private var micSessions: [MicMuteControllable] {
+        var out: [MicMuteControllable] = []
+        if let s = session { out.append(s) }
+        if let o = onDeviceSession { out.append(o) }
+        return out
     }
 
     func forceSend() {

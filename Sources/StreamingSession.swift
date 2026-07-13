@@ -134,7 +134,10 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
     }
 
     private func rebuildMicTap() {
-        guard isRunning, let targetFormat = Optional(self.targetFormat) else { return }
+        // Never relight the mic while muted — a route/config/interruption event
+        // must not undo mute-mic-only by re-adding the input tap.
+        guard isRunning, !isMuted else { return }
+        let targetFormat = self.targetFormat
         let input = engine.inputNode
         input.removeTap(onBus: 0)
         let hwFormat = input.outputFormat(forBus: 0)
@@ -336,6 +339,58 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
     func unmute() {
         isMuted = false
         sendControl(["type": "unmute"])
+    }
+
+    // MARK: - Mute = MIC ONLY (feedback_mute_cuts_mic_only_hard_rule)
+    //
+    // The mute button releases ONLY the mic input. The WebSocket, engine, and
+    // any in-flight TTS all stay ALIVE. Full teardown (stop()) is correct ONLY
+    // for background/terminate — never for mute.
+
+    /// Mute: (1) tell the server to finalize the in-flight utterance so the
+    /// user's mid-sentence still commits + gets a reply (the server's `mute`
+    /// only pauses its VAD — it does NOT cancel the in-flight process_utterance,
+    /// so the flushed turn's TTS still streams back over the OPEN socket), then
+    /// (2) drop the mic tap + go playback-only so the orange mic dot goes dark,
+    /// WITHOUT stopping the engine, halting playback, or closing the socket.
+    /// Main-actor isolated (called only from the view model) to satisfy the
+    /// @MainActor MicMuteControllable contract.
+    @MainActor
+    func muteMicOnly() {
+        guard isRunning else { return }
+        sendControl(["type": "force_cut"])
+        isMuted = true
+        sendControl(["type": "mute"])
+        engine.inputNode.removeTap(onBus: 0)
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setCategory(.playback, mode: .spokenAudio)
+            try session.setActive(true, options: [])
+        } catch {
+            NSLog("[GemmaVoice] muteMicOnly playback-only switch failed: \(error)")
+        }
+    }
+
+    /// Unmute: re-acquire the mic on the still-open session — restore the
+    /// record+playback category, tell the server to resume its VAD, and
+    /// rebuild the mic tap. No socket/engine rebuild.
+    @MainActor
+    func unmuteMic() {
+        guard isRunning else { return }
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setCategory(.playAndRecord, mode: .spokenAudio,
+                                    options: [.allowBluetoothHFP, .allowBluetoothA2DP, .defaultToSpeaker])
+            try session.setActive(true, options: [])
+            if !hasExternalOutputRoute(session) {
+                try? session.overrideOutputAudioPort(.speaker)
+            }
+        } catch {
+            NSLog("[GemmaVoice] unmuteMic category restore failed: \(error)")
+        }
+        isMuted = false
+        sendControl(["type": "unmute"])
+        rebuildMicTap()   // reinstall tap, fresh converter, re-arm warmup gate
     }
 
     func forceCut() {
@@ -751,3 +806,7 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
         webSocket?.send(.string(str)) { _ in }
     }
 }
+
+// Mute = MIC ONLY contract (see MuteSelfTest.swift). Methods live in the class
+// body above; this declares the conformance.
+extension StreamingSession: MicMuteControllable {}

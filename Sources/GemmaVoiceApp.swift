@@ -22,6 +22,11 @@ struct GemmaVoiceApp: App {
         // domain backs bool(forKey:) and both agree. Runs AFTER the legacy
         // migration above so `object(forKey:) == nil` still detects unwritten keys.
         defaults.register(defaults: ["useOnDeviceSTT": true])
+
+        // Regression guard for the mute-cuts-mic-only hard rule. Asserts (traps
+        // in DEBUG) if the mute contract regresses; a no-op in release builds
+        // (assert is compiled out). See MuteSelfTest.swift.
+        runMuteCutsMicOnlySelfTest()
     }
 
     var body: some Scene {

@@ -314,6 +314,86 @@ final class OnDeviceConversationSession: NSObject {
     func mute() { isMuted = true }
     func unmute() { isMuted = false }
 
+    // MARK: - Mute = MIC ONLY (feedback_mute_cuts_mic_only_hard_rule)
+    //
+    // The mute button must release ONLY the mic input. It must NEVER stop the
+    // session, cancel an in-flight utterance, or kill in-progress TTS. This is
+    // the counterpart to stop() (full teardown), which is correct ONLY for
+    // background/terminate — never for mute. Do NOT route mute through stop().
+
+    /// Mute: (1) finalize any committable in-flight utterance so it still
+    /// commits → fires the turn → gets its TTS reply, (2) drop the mic input
+    /// tap, (3) reconfigure the audio session to playback-only so the orange
+    /// mic indicator goes dark — WHILE the engine keeps running (any playing
+    /// reply drains), the session object stays alive, and the turn machinery
+    /// is untouched. Never engine.stop() / setActive(false) / nil the session.
+    func muteMicOnly() {
+        guard isRunning else { return }
+        // (1) Finalize an in-flight utterance through the normal cut path. Check
+        //     committability under the lock; forceCut() drains the live
+        //     recognizer (endStreaming) and awaits its final → a reply streams.
+        accumulatorLock.lock()
+        let hasCommittable = inSpeech && speechFrameCount >= minUtteranceFrames
+        accumulatorLock.unlock()
+        if hasCommittable {
+            forceCut()
+        } else {
+            // Nothing worth committing — abandon any half-captured fragment so a
+            // live recognizer isn't left running once the tap is gone.
+            accumulatorLock.lock()
+            streamingActive = false
+            pcmAccumulator.removeAll(keepingCapacity: true)
+            resetUtteranceState()
+            accumulatorLock.unlock()
+            OnDeviceSTT.shared.cancelStreaming()
+        }
+        // (2) Release ONLY the mic input.
+        isMuted = true
+        engine.inputNode.removeTap(onBus: 0)
+        // (3) Go playback-only so the mic indicator goes dark WITHOUT stopping
+        //     the engine — the playerNode keeps draining in-flight TTS and the
+        //     session stays alive. Restored by unmuteMic().
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setCategory(.playback, mode: .spokenAudio)
+            try session.setActive(true, options: [])
+        } catch {
+            NSLog("[GemmaVoice] muteMicOnly playback-only switch failed: \(error)")
+        }
+    }
+
+    /// Unmute: re-acquire the mic on the STILL-ALIVE session — restore the
+    /// record+playback category and re-install the input tap on the still-
+    /// running engine. Counterpart to muteMicOnly(); no session rebuild.
+    func unmuteMic() {
+        guard isRunning else { return }
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setCategory(.playAndRecord, mode: .spokenAudio,
+                                    options: [.allowBluetoothHFP, .allowBluetoothA2DP, .defaultToSpeaker])
+            try session.setActive(true, options: [])
+            if !hasExternalOutputRoute(session) {
+                try? session.overrideOutputAudioPort(.speaker)
+            }
+        } catch {
+            NSLog("[GemmaVoice] unmuteMic category restore failed: \(error)")
+        }
+        // Re-install the mic tap on the running engine (fresh converter in case
+        // the hw format changed while playback-only).
+        let input = engine.inputNode
+        let hwFormat = input.outputFormat(forBus: 0)
+        self.converter = AVAudioConverter(from: hwFormat, to: captureFormat)
+        input.removeTap(onBus: 0)
+        input.installTap(onBus: 0, bufferSize: 4096, format: hwFormat) { [weak self] buffer, _ in
+            self?.handleMicBuffer(buffer)
+        }
+        if !engine.isRunning {
+            engine.prepare()
+            try? engine.start()
+        }
+        isMuted = false
+    }
+
     /// Force-cut the current utterance immediately (Sherman tapping send).
     func forceCut() {
         accumulatorLock.lock()
@@ -838,6 +918,10 @@ final class OnDeviceConversationSession: NSObject {
         return session.currentRoute.outputs.contains { externalTypes.contains($0.portType) }
     }
 }
+
+// Mute = MIC ONLY contract (see MuteSelfTest.swift). Methods live in the class
+// body above; this declares the conformance.
+extension OnDeviceConversationSession: MicMuteControllable {}
 
 // MARK: - TextTurnClient stub protocol
 // Real implementation lands in commit 3 (TextTurnClient.swift). Defined

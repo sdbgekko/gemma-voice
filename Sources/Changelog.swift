@@ -12,6 +12,13 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.34",
+            date: "Jul 12",
+            hints: [
+                "Mute now turns off the microphone only — nothing else. If you speak and then tap Mute mid-sentence, Gemma still hears what you already said and answers it, and if she's already talking she keeps talking. Only the mic goes quiet (the orange dot goes dark); tap again to talk. Muting no longer freezes a card on \"Heard\" or cuts Gemma off.",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.33",
             date: "Jul 12",
             hints: [
