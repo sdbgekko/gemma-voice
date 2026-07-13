@@ -207,10 +207,10 @@ struct ContentView: View {
     }
 
     /// Speaker output on/off — a SEPARATE control from mute, cutting Gemma's
-    /// voice OUTPUT live (see StreamingViewModel.toggleSpeaker). Gold to stay
-    /// visually distinct from the blue mic/mute button; icon + label reflect the
-    /// state. Independent: silencing the speaker does not touch the mic and vice
-    /// versa. Compact fixed width so the mute button keeps the primary emphasis.
+    /// voice OUTPUT live (see StreamingViewModel.toggleSpeaker). Plain neutral
+    /// icon button (Sherman 2026-07-13: "doesn't need to be gold, just a simple
+    /// speaker icon") — the wave/slash icon carries the state, kept secondary so
+    /// the mute button holds the primary emphasis. Independent of the mic.
     private var speakerButton: some View {
         Button(action: { viewModel.toggleSpeaker() }) {
             VStack(spacing: 2) {
@@ -219,9 +219,9 @@ struct ContentView: View {
                 Text(viewModel.speakerOn ? "Sound" : "Silent")
                     .font(.caption2.weight(.semibold))
             }
-            .foregroundColor(.white)   // white on deep gold / gray both clear AA
+            .foregroundColor(viewModel.speakerOn ? .primary : .secondary)
             .frame(width: 84, height: 52)
-            .background(viewModel.speakerOn ? Color.gemmaSpeakerGold : Color(hex: "#6E6E73"))
+            .background(Color(.tertiarySystemFill))
             .cornerRadius(14)
         }
         .buttonStyle(.plain)
