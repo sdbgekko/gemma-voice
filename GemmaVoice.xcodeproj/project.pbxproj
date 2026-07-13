@@ -26,9 +26,11 @@
 		8B31CF5E9C43868068B4F17E /* OnDeviceConversationSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58C0170FF31B87119E0BF6F9 /* OnDeviceConversationSession.swift */; };
 		907B993DE19F14DCB2C24206 /* GemmaVoiceApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D76531DC826ED3D1FF16910B /* GemmaVoiceApp.swift */; };
 		9295BE1D0CBC106F079C7CB3 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C6EEA7752462D4D77D81949 /* APIClient.swift */; };
+		97B664A0E52C03D886A2C072 /* MuteSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0060A6D021323561FFBBE0A6 /* MuteSelfTest.swift */; };
 		9D799BBE36E435F0DA767178 /* EarbackTone.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0478F1B10235AA78A91BB431 /* EarbackTone.swift */; };
 		9F5D5B4CBE1CF15C8E815F26 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F32BCD10426226671D4307EC /* ContentView.swift */; };
 		9FB87E78A770C323525A3791 /* LiveActivityController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 792411C73D8340A3122B4CBD /* LiveActivityController.swift */; };
+		A28361FA8A4A85424F567949 /* SpeakerSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002379C26C7C5A9EEBBBE77E /* SpeakerSelfTest.swift */; };
 		B93B97F7721D991AB90B0507 /* VoiceAuthSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B015275E89C8C9573430EFFC /* VoiceAuthSetupView.swift */; };
 		C35CD8B40BA1A403806242BD /* GemmaVoiceWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC1D0264DA93B2E2AD5E201C /* GemmaVoiceWatchApp.swift */; };
 		CD71851F1C4E9AF485D0CEBF /* StreamingSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = D742BFD46C012F4D7DAA6DB0 /* StreamingSession.swift */; };
@@ -86,6 +88,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		002379C26C7C5A9EEBBBE77E /* SpeakerSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeakerSelfTest.swift; sourceTree = "<group>"; };
+		0060A6D021323561FFBBE0A6 /* MuteSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MuteSelfTest.swift; sourceTree = "<group>"; };
 		0478F1B10235AA78A91BB431 /* EarbackTone.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EarbackTone.swift; sourceTree = "<group>"; };
 		0EEB15BAD7C61FB0A6400CC8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		161B6A8D1B9F353B4DBEFA99 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -179,9 +183,11 @@
 				D76531DC826ED3D1FF16910B /* GemmaVoiceApp.swift */,
 				42A38662174A707C86C34430 /* LedgerTurn.swift */,
 				792411C73D8340A3122B4CBD /* LiveActivityController.swift */,
+				0060A6D021323561FFBBE0A6 /* MuteSelfTest.swift */,
 				58C0170FF31B87119E0BF6F9 /* OnDeviceConversationSession.swift */,
 				65084D5F1C669037DFC39BB8 /* OnDeviceSTT.swift */,
 				5C01C90D094D9379036D50D5 /* SettingsView.swift */,
+				002379C26C7C5A9EEBBBE77E /* SpeakerSelfTest.swift */,
 				D742BFD46C012F4D7DAA6DB0 /* StreamingSession.swift */,
 				B5886E5F151902131B1C214D /* StreamingViewModel.swift */,
 				B37F3B1399C2FF8241D8EE53 /* TextTurnClient.swift */,
@@ -377,9 +383,11 @@
 				77476F08A8DD63FD10F0B5D9 /* LedgerTurn.swift in Sources */,
 				FBCD1AF2A6AC772DF3478310 /* LiveActivityAttributes.swift in Sources */,
 				9FB87E78A770C323525A3791 /* LiveActivityController.swift in Sources */,
+				97B664A0E52C03D886A2C072 /* MuteSelfTest.swift in Sources */,
 				8B31CF5E9C43868068B4F17E /* OnDeviceConversationSession.swift in Sources */,
 				6619B870724825B2BE6E06D2 /* OnDeviceSTT.swift in Sources */,
 				DE69138449588901BE8F516B /* SettingsView.swift in Sources */,
+				A28361FA8A4A85424F567949 /* SpeakerSelfTest.swift in Sources */,
 				CD71851F1C4E9AF485D0CEBF /* StreamingSession.swift in Sources */,
 				0FAE1BADB6DD3097BE0CE9FA /* StreamingViewModel.swift in Sources */,
 				61FF0FB62CB37DCFBB3725B3 /* TextTurnClient.swift in Sources */,
