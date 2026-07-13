@@ -12,6 +12,13 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.35",
+            date: "Jul 13",
+            hints: [
+                "New speaker button, next to Mute. There are now two separate controls: Mute turns off your microphone, and the new speaker button turns Gemma's voice on or off. Tap the speaker to silence her — it cuts her voice right away, even in the middle of a sentence — and tap it again to hear her. Silencing her voice doesn't stop the mic, and muting the mic doesn't stop her voice; the two work independently, and the speaker setting is remembered.",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.34",
             date: "Jul 12",
             hints: [

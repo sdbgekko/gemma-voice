@@ -417,6 +417,24 @@ final class OnDeviceConversationSession: NSObject {
         Task { await handleUtteranceCut() }
     }
 
+    // MARK: - Speaker = OUTPUT ONLY (feedback_implement_the_literal_control_behavior)
+    //
+    // The speaker toggle changes ONLY the live playback volume of Gemma's TTS.
+    // Setting playerNode.volume takes effect IMMEDIATELY on the audio the mixer
+    // is rendering right now — so audio already playing is cut/restored
+    // mid-buffer, at the moment of press, NOT at the next turn boundary. The
+    // node keeps playing (buffers keep draining, the turn/card still complete),
+    // it's just inaudible. Independent of mute.
+
+    /// Set Gemma's audio output audible (on) or silent (off) IMMEDIATELY.
+    /// `playerNode.volume` is a real-time mixing parameter — changing it affects
+    /// the buffer currently rendering, so an OFF cuts her voice live, even
+    /// mid-sentence, without stopping the node or the turn. See SpeakerSelfTest.
+    @MainActor
+    func setSpeakerOutput(on: Bool) {
+        playerNode.volume = on ? 1.0 : 0.0
+    }
+
     // MARK: - Mic loop
 
     private func handleMicBuffer(_ buffer: AVAudioPCMBuffer) {
@@ -922,6 +940,7 @@ final class OnDeviceConversationSession: NSObject {
 // Mute = MIC ONLY contract (see MuteSelfTest.swift). Methods live in the class
 // body above; this declares the conformance.
 extension OnDeviceConversationSession: MicMuteControllable {}
+extension OnDeviceConversationSession: SpeakerControllable {}
 
 // MARK: - TextTurnClient stub protocol
 // Real implementation lands in commit 3 (TextTurnClient.swift). Defined

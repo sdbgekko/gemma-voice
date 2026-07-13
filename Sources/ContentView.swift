@@ -177,7 +177,13 @@ struct ContentView: View {
             )
             .frame(height: 40)
             .padding(.horizontal, 24)
-            muteButton
+            // Two INDEPENDENT controls, side by side (mirrors AlohaVoice):
+            // MUTE = the mic (his input, blue), SPEAKER = Gemma's voice output
+            // (gold). Kept visually distinct so the two affordances never blur.
+            HStack(spacing: 10) {
+                muteButton
+                speakerButton
+            }
         }
         .padding(.horizontal, 16)
         .padding(.top, 10)
@@ -198,6 +204,30 @@ struct ContentView: View {
             .cornerRadius(14)
         }
         .buttonStyle(.plain)
+    }
+
+    /// Speaker output on/off — a SEPARATE control from mute, cutting Gemma's
+    /// voice OUTPUT live (see StreamingViewModel.toggleSpeaker). Gold to stay
+    /// visually distinct from the blue mic/mute button; icon + label reflect the
+    /// state. Independent: silencing the speaker does not touch the mic and vice
+    /// versa. Compact fixed width so the mute button keeps the primary emphasis.
+    private var speakerButton: some View {
+        Button(action: { viewModel.toggleSpeaker() }) {
+            VStack(spacing: 2) {
+                Image(systemName: viewModel.speakerOn ? "speaker.wave.2.fill" : "speaker.slash.fill")
+                    .font(.headline)
+                Text(viewModel.speakerOn ? "Sound" : "Silent")
+                    .font(.caption2.weight(.semibold))
+            }
+            .foregroundColor(.white)   // white on deep gold / gray both clear AA
+            .frame(width: 84, height: 52)
+            .background(viewModel.speakerOn ? Color.gemmaSpeakerGold : Color(hex: "#6E6E73"))
+            .cornerRadius(14)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(viewModel.speakerOn
+            ? "Speaker on. Tap to silence Gemma's voice."
+            : "Speaker off. Tap to hear Gemma's voice.")
     }
 
     private var statusLabel: String {
@@ -366,4 +396,10 @@ extension Color {
     /// Contrast fix: white label on system blue is ~3.26:1 (borderline).
     /// #2E6FD6 lifts white-on-blue to ~4.6:1 (AA).
     static let gemmaMicBlue = Color(hex: "#2E6FD6")
+
+    /// Speaker-button fill when sound is ON. Deep gold echoes the GEMMA logo /
+    /// waveform while staying DISTINCT from the blue mic/mute button. Chosen dark
+    /// enough that the white label clears AA (white on #8A6414 ≈ 5.4:1); the
+    /// lighter brand gold #D4A44A would fail as a white-text ground (~2.3:1).
+    static let gemmaSpeakerGold = Color(hex: "#8A6414")
 }

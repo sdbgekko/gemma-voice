@@ -23,10 +23,20 @@ struct GemmaVoiceApp: App {
         // migration above so `object(forKey:) == nil` still detects unwritten keys.
         defaults.register(defaults: ["useOnDeviceSTT": true])
 
+        // Speaker output defaults ON (Gemma is audible). Registered so
+        // StreamingViewModel's `speakerOn = bool(forKey:)` reads true on a fresh
+        // install; the toggle persists the user's choice thereafter.
+        defaults.register(defaults: ["speakerOn": true])
+
         // Regression guard for the mute-cuts-mic-only hard rule. Asserts (traps
         // in DEBUG) if the mute contract regresses; a no-op in release builds
         // (assert is compiled out). See MuteSelfTest.swift.
         runMuteCutsMicOnlySelfTest()
+
+        // Regression guard for the speaker-toggle-cuts-output-LIVE rule: a
+        // speaker toggle moves the output volume NOW (even mid-utterance), never
+        // gates the next turn. See SpeakerSelfTest.swift.
+        runSpeakerToggleCutsOutputLiveSelfTest()
     }
 
     var body: some Scene {

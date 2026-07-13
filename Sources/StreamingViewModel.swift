@@ -22,6 +22,12 @@ final class StreamingViewModel: ObservableObject {
     @Published var hadSpeechFlag = false
     @Published var lastSendAttempt: Date?
     @Published var lastSendResult: String = "-"
+    /// Speaker output on/off — INDEPENDENT of mute (mic). ON = Gemma is audible,
+    /// OFF = her TTS output is silenced live (the player node's volume, cut at
+    /// the instant of press, even mid-utterance). Seeded from the persisted
+    /// "speakerOn" default (registered true in GemmaVoiceApp.init) so the
+    /// setting survives relaunch. The dock's speaker button binds to this.
+    @Published var speakerOn: Bool = UserDefaults.standard.bool(forKey: "speakerOn")
 
     private var session: StreamingSession?
     private var onDeviceSession: OnDeviceConversationSession?
@@ -192,6 +198,34 @@ final class StreamingViewModel: ObservableObject {
         return out
     }
 
+    /// SPEAKER = OUTPUT ONLY (feedback_implement_the_literal_control_behavior).
+    /// Flip the speaker output and cut/restore Gemma's live audio IMMEDIATELY —
+    /// at the instant of press, even mid-sentence. This drives the player node's
+    /// volume through `SpeakerControllable.setSpeakerOutput`; it does NOT gate
+    /// the next turn, stop the node, or touch the session/turn machinery, so the
+    /// turn still completes and the card still fills — she's just inaudible.
+    /// INDEPENDENT of mute: mic and speaker are two separate toggles.
+    func toggleSpeaker() {
+        speakerOn = SpeakerLogic.nextState(currentlyOn: speakerOn)
+        UserDefaults.standard.set(speakerOn, forKey: "speakerOn")
+        applySpeakerState()
+    }
+
+    /// Apply the current speaker state to every live audio session — used by the
+    /// toggle (live cut) and at session start (so a session created while
+    /// speaker is OFF comes up silent, e.g. a cold start after backgrounding).
+    private func applySpeakerState() {
+        speakerSessions.forEach { $0.setSpeakerOutput(on: speakerOn) }
+    }
+
+    /// The live audio sessions, as the speaker contract's protocol type.
+    private var speakerSessions: [SpeakerControllable] {
+        var out: [SpeakerControllable] = []
+        if let s = session { out.append(s) }
+        if let o = onDeviceSession { out.append(o) }
+        return out
+    }
+
     func forceSend() {
         session?.forceCut()
         onDeviceSession?.forceCut()
@@ -273,6 +307,7 @@ final class StreamingViewModel: ObservableObject {
                     do {
                         try self.onDeviceSession?.start()
                         self.onDeviceSession?.unmute()
+                        self.applySpeakerState()   // honor a persisted speaker-OFF on a fresh session
                         self.isCapturing = true
                         self.status = .listening
                     } catch {
@@ -297,6 +332,7 @@ final class StreamingViewModel: ObservableObject {
         do {
             try session?.start()
             session?.unmute()
+            applySpeakerState()   // honor a persisted speaker-OFF on a fresh session
             isCapturing = true
             status = .listening
         } catch {

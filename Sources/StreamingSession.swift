@@ -397,6 +397,24 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
         sendControl(["type": "force_cut"])
     }
 
+    // MARK: - Speaker = OUTPUT ONLY (feedback_implement_the_literal_control_behavior)
+    //
+    // The speaker toggle changes ONLY the live playback volume of Gemma's TTS.
+    // Setting playerNode.volume takes effect IMMEDIATELY on the audio the mixer
+    // is rendering right now — so audio already playing is cut/restored
+    // mid-buffer, at the moment of press, NOT at the next turn boundary. The
+    // node keeps playing (buffers keep draining, completion handlers still fire,
+    // the turn/card still complete), it's just inaudible. Independent of mute.
+
+    /// Set Gemma's audio output audible (on) or silent (off) IMMEDIATELY.
+    /// `playerNode.volume` is a real-time mixing parameter — changing it affects
+    /// the buffer currently rendering, so an OFF cuts her voice live, even
+    /// mid-sentence, without stopping the node or the turn. See SpeakerSelfTest.
+    @MainActor
+    func setSpeakerOutput(on: Bool) {
+        playerNode.volume = on ? 1.0 : 0.0
+    }
+
     /// User swiped away the in-flight turn (a mis-captured cough/"mm-hmm"):
     /// stop its TTS locally and tell the server to flush the rest of the reply.
     /// Reuses the barge-in interrupt path — the mic/socket stay up, only this
@@ -810,3 +828,4 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
 // Mute = MIC ONLY contract (see MuteSelfTest.swift). Methods live in the class
 // body above; this declares the conformance.
 extension StreamingSession: MicMuteControllable {}
+extension StreamingSession: SpeakerControllable {}
