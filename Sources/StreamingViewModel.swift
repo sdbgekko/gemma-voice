@@ -35,7 +35,15 @@ final class StreamingViewModel: ObservableObject {
     /// out of scope; the value here is whichever was active when the
     /// user first granted mic permission this launch.
     private var useOnDevice: Bool = false
-    private let endpoint: URL
+    /// The brain the user picked in the top-left menu. Persisted so it survives
+    /// relaunch; drives the `?agent=` query param on the WebSocket URL below.
+    @Published var selectedAgentID: String = UserDefaults.standard.string(forKey: "selectedAgentID") ?? "gemma"
+    /// Streaming server WebSocket. Computed so it always carries the currently
+    /// selected agent — the server reads `?agent=` and routes this session's
+    /// turns to Gemma (desk tmux), Jarvis (Excalibur) or Kai (KPC).
+    private var endpoint: URL {
+        URL(string: "ws://100.80.225.86:9201?agent=\(selectedAgentID)")!
+    }
     private let maxTurns = 20
     /// User tapped mute. Stays true until they tap unmute, regardless of
     /// playback state, so the UI doesn't flip colors while TTS plays over
@@ -65,8 +73,8 @@ final class StreamingViewModel: ObservableObject {
     private var conversationActive: Bool { isCapturing && !userMuted }
 
     init() {
-        // JMM Tailscale IP, streaming server port 9201.
-        self.endpoint = URL(string: "ws://100.80.225.86:9201")!
+        // `endpoint` is now a computed property (carries the selected agent);
+        // no assignment needed here.
 
         // v0.2.21 fix: when iOS suspends + resumes the app (phone call, home button,
         // background), AVAudioSession deactivates silently and the WebSocket can
@@ -237,6 +245,23 @@ final class StreamingViewModel: ObservableObject {
     /// live state; we don't optimistically flip to listening here.
     func reconnect() {
         session?.reconnectNow()
+    }
+
+    /// Switch which brain the voice app talks to. Persists the choice and, if a
+    /// live socket is up, tears it down and reconnects on the new `?agent=` URL
+    /// so subsequent turns route to the chosen brain. The server confirms the
+    /// name via its `{"type":"agent"}` announce; we set it optimistically here
+    /// so the UI updates instantly.
+    func selectAgent(_ id: String) {
+        guard id != selectedAgentID else { return }
+        selectedAgentID = id
+        UserDefaults.standard.set(id, forKey: "selectedAgentID")
+        currentAgentName = VoiceAgent.by(id: id).displayName
+        // Recreate the socket so it connects with the new agent in the URL.
+        let wasActive = isCapturing
+        session?.stop()
+        session = nil
+        if wasActive { startSession() }
     }
 
     // MARK: - Voice enrollment mic handoff (0.2.30)

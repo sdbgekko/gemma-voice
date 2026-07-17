@@ -39,6 +39,7 @@ struct ContentView: View {
 
     private var connectionBar: some View {
         HStack(spacing: 8) {
+            agentPicker
             // P0-1: when the socket is down this reads "disconnected — tap to
             // reconnect" and forces a fresh connection. Hit-testing is only
             // enabled while disconnected so it never swallows normal taps.
@@ -66,6 +67,35 @@ struct ContentView: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 4)
+    }
+
+    // Top-left brain picker: choose which agent the voice app talks to.
+    // Data-driven from VoiceAgent.all, so the full roster drops in later.
+    private var agentPicker: some View {
+        Menu {
+            ForEach(VoiceAgent.all) { agent in
+                Button {
+                    viewModel.selectAgent(agent.id)
+                } label: {
+                    if viewModel.selectedAgentID == agent.id {
+                        Label("\(agent.displayName) · \(agent.subtitle)", systemImage: "checkmark")
+                    } else {
+                        Text("\(agent.displayName) · \(agent.subtitle)")
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(VoiceAgent.by(id: viewModel.selectedAgentID).displayName)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                Image(systemName: "chevron.down")
+                    .font(.caption2)
+            }
+            .foregroundColor(.primary)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
     }
 
     private var connectionLabel: String {
