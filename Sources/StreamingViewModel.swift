@@ -31,6 +31,11 @@ final class StreamingViewModel: ObservableObject {
 
     private var session: StreamingSession?
     private var onDeviceSession: OnDeviceConversationSession?
+    /// Dedicated player for TYPED-message replies (0.2.39). Buffer-then-play via
+    /// a WAV wrapper — independent of the mic capture graph, so a text turn can
+    /// speak whether or not a live voice session is up. Best-effort: text-only
+    /// replies never touch this.
+    private let textReplyPlayer = AudioPlayer()
     /// Snapshot of the toggle at start time — switching mid-session is
     /// out of scope; the value here is whichever was active when the
     /// user first granted mic permission this launch.
@@ -262,6 +267,118 @@ final class StreamingViewModel: ObservableObject {
         session?.stop()
         session = nil
         if wasActive { startSession() }
+    }
+
+    // MARK: - Typed message input (0.2.39, AlohaVoice-style)
+    //
+    // Text is an ADDITIONAL modality — the voice path is untouched. A typed line
+    // renders into the SAME turn ledger the voice path uses, routes to the
+    // currently-selected picker agent (via TextTurnClient's `agent` field →
+    // server `/text_turn` routing), and plays the voice reply best-effort. A
+    // text-only reply (silent, or the speaker toggled off) is fine by design.
+
+    /// Send a typed message and render the turn in the ledger. Non-blocking:
+    /// the mic/session are never touched, so you can type while a voice session
+    /// is live (or muted, or disconnected).
+    func sendText(_ raw: String) {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        let agent = selectedAgentID
+        let agentName = VoiceAgent.by(id: agent).displayName
+
+        // Mirror the voice path's ledger sequence: open a card, fill the
+        // you-line, mark it in-flight (.working).
+        appendTurn(text: text, isGemma: false, source: "typed", speaker: "sherman")
+        ledgerAppendHeard()
+        ledgerFillYou(text, speaker: "sherman")
+
+        let client = TextTurnClient(agent: agent)
+        let sink = PCMSink()
+        let sid = "text-\(UUID().uuidString.prefix(8))"
+
+        Task { @MainActor in
+            do {
+                let result = try await client.postText(
+                    text,
+                    speakerHint: "sherman",
+                    sessionId: sid,
+                    wavBase64: nil,
+                    onAudioChunk: { sink.append($0) }
+                )
+                var reply = result.replyText
+                // Streaming-flag path (SENTENCE_STREAM_HTTP, default off): the
+                // reply isn't in the header — fetch it by turn id. Harmless no-op
+                // on the classic path, where replyText is already populated.
+                if reply.isEmpty, let rid = result.rid {
+                    for _ in 0..<3 {
+                        if let late = try? await client.fetchReplyText(rid: rid), !late.isEmpty {
+                            reply = late
+                            break
+                        }
+                        try? await Task.sleep(nanoseconds: 400_000_000)
+                    }
+                }
+                if !reply.isEmpty {
+                    self.appendTurn(text: reply, isGemma: true, source: agent, speaker: nil)
+                    self.ledgerSetReply(reply, source: agent)
+                }
+                self.ledgerAnswered()
+                // Best-effort voice: only when the speaker is on and audio came back.
+                let pcm = sink.take()
+                if self.speakerOn, !pcm.isEmpty {
+                    try? self.textReplyPlayer.play(data: StreamingViewModel.pcm16WAV(pcm, sampleRate: 24000))
+                }
+            } catch {
+                let reason = self.textTurnFailureReason(error, agentName: agentName)
+                self.ledgerDropped(reason)
+                self.errorMessage = reason
+            }
+        }
+    }
+
+    /// Turn a /text_turn failure into a plain-voice line. A 502/timeout on a
+    /// non-Gemma agent means that brain is down — the server's dead-brain guard
+    /// returns "pick another agent"; we echo the same intent to the user.
+    private func textTurnFailureReason(_ error: Error, agentName: String) -> String {
+        if let e = error as? TextTurnClient.TextTurnError {
+            switch e {
+            case .secretNotProvisioned:
+                return "Set the voice-turn secret in Settings to send messages."
+            case .authFailed:
+                return "Couldn't authenticate — re-paste the voice-turn secret in Settings."
+            default:
+                break
+            }
+        }
+        return "\(agentName) didn't respond — try again or pick another agent."
+    }
+
+    /// Wrap raw little-endian PCM16 mono samples in a minimal 44-byte WAV header
+    /// so AVAudioPlayer (which needs a container, not raw PCM) can play the typed
+    /// reply's voice. 24kHz mono is what Kokoro streams over /text_turn.
+    private static func pcm16WAV(_ pcm: Data, sampleRate: Int) -> Data {
+        let channels = 1, bitsPerSample = 16
+        let byteRate = sampleRate * channels * bitsPerSample / 8
+        let blockAlign = channels * bitsPerSample / 8
+        let dataLen = pcm.count
+        func u32(_ v: Int) -> Data { var x = UInt32(v).littleEndian; return Data(bytes: &x, count: 4) }
+        func u16(_ v: Int) -> Data { var x = UInt16(v).littleEndian; return Data(bytes: &x, count: 2) }
+        var h = Data()
+        h.append("RIFF".data(using: .ascii)!)
+        h.append(u32(36 + dataLen))
+        h.append("WAVE".data(using: .ascii)!)
+        h.append("fmt ".data(using: .ascii)!)
+        h.append(u32(16))                 // PCM fmt chunk size
+        h.append(u16(1))                  // format = PCM
+        h.append(u16(channels))
+        h.append(u32(sampleRate))
+        h.append(u32(byteRate))
+        h.append(u16(blockAlign))
+        h.append(u16(bitsPerSample))
+        h.append("data".data(using: .ascii)!)
+        h.append(u32(dataLen))
+        h.append(pcm)
+        return h
     }
 
     // MARK: - Voice enrollment mic handoff (0.2.30)
@@ -743,4 +860,14 @@ final class StreamingViewModel: ObservableObject {
             transcript.remove(at: gi)
         }
     }
+}
+
+/// Thread-safe PCM byte accumulator for a typed-message reply (0.2.39).
+/// TextTurnClient delivers audio chunks on a background URLSession thread; a
+/// lock keeps the append safe without hopping to the main actor per chunk.
+private final class PCMSink {
+    private let lock = NSLock()
+    private var data = Data()
+    func append(_ chunk: Data) { lock.lock(); data.append(chunk); lock.unlock() }
+    func take() -> Data { lock.lock(); defer { lock.unlock() }; return data }
 }

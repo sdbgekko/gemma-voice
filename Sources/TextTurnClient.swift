@@ -50,9 +50,15 @@ final class TextTurnClient: TextTurnClientProtocol {
 
     private let baseURL: URL
     private let session: URLSession
+    /// Picker agent this client routes to (0.2.39). When set, it's sent as the
+    /// `agent` field so the server routes the turn to Gemma / Jarvis / Kai — the
+    /// HTTP twin of the WebSocket `?agent=` param. nil omits the field, so the
+    /// server defaults to Gemma (byte-identical to the old on-device path).
+    private let agent: String?
 
-    init(baseURL: URL = TextTurnClient.defaultBase, session: URLSession? = nil) {
+    init(baseURL: URL = TextTurnClient.defaultBase, agent: String? = nil, session: URLSession? = nil) {
         self.baseURL = baseURL
+        self.agent = agent
         if let session {
             self.session = session
         } else {
@@ -94,6 +100,11 @@ final class TextTurnClient: TextTurnClientProtocol {
         // as before when the field is absent.
         if let wavBase64 {
             payload["wav_base64"] = wavBase64
+        }
+        // Route this turn to the selected picker agent (0.2.39). Omitted when
+        // nil so the server keeps its Gemma default.
+        if let agent {
+            payload["agent"] = agent
         }
         let bodyData = try JSONSerialization.data(withJSONObject: payload)
         req.httpBody = bodyData

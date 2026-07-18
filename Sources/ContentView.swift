@@ -5,6 +5,10 @@ struct ContentView: View {
     @EnvironmentObject var viewModel: StreamingViewModel
     @AppStorage("appearance") private var appearance: String = "system"
     @State private var showSettings = false
+    /// Draft for the typed-message compose bar (0.2.39). Text is an additional
+    /// modality alongside "tap to talk".
+    @State private var draft: String = ""
+    @FocusState private var composeFocused: Bool
 
     private var preferredScheme: ColorScheme? {
         switch appearance {
@@ -214,11 +218,50 @@ struct ContentView: View {
                 muteButton
                 speakerButton
             }
+            composeBar
         }
         .padding(.horizontal, 16)
         .padding(.top, 10)
         .padding(.bottom, 12)
         .background(Color(.secondarySystemBackground).ignoresSafeArea(edges: .bottom))
+    }
+
+    /// Typed-message compose bar (0.2.39) — the text twin of "tap to talk".
+    /// Sends to the currently-selected agent; the reply lands in the same ledger
+    /// and speaks if the speaker is on. Doesn't touch the mic, so you can type
+    /// while a voice session is live, muted, or disconnected.
+    private var composeBar: some View {
+        HStack(spacing: 8) {
+            TextField("Type a message…", text: $draft)
+                .textFieldStyle(.plain)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .background(Color(.tertiarySystemFill))
+                .cornerRadius(18)
+                .focused($composeFocused)
+                .submitLabel(.send)
+                .onSubmit(sendDraft)
+            Button(action: sendDraft) {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.system(size: 30))
+                    .foregroundColor(draftIsEmpty ? .secondary : .gemmaMicBlue)
+            }
+            .buttonStyle(.plain)
+            .disabled(draftIsEmpty)
+            .accessibilityLabel("Send message")
+        }
+    }
+
+    private var draftIsEmpty: Bool {
+        draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func sendDraft() {
+        guard !draftIsEmpty else { return }
+        let text = draft
+        draft = ""
+        composeFocused = false
+        viewModel.sendText(text)
     }
 
     private var muteButton: some View {

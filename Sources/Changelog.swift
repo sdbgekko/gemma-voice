@@ -12,6 +12,15 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.39",
+            date: "Jul 18",
+            hints: [
+                "Type a message. There's a new message box at the bottom — tap it, type, and send, and you get an answer without saying a word. It goes to whoever's picked in the top-left, shows up in the same list as your spoken turns, and she reads it back out loud if the speaker's on. Talking still works exactly the same; this is just another way in.",
+                "Each agent has its own voice now. Gemma sounds like Gemma, Jarvis answers in his own voice, and Kai in his — so you can tell by ear who you're talking to.",
+                "If a brain is offline, it says so. Ask Jarvis or Kai when they're down and instead of hanging on \"working\" forever, it tells you they're offline so you can pick someone else.",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.38",
             date: "Jul 17",
             hints: [
