@@ -166,7 +166,8 @@ struct TurnCardView: View {
         switch turn.source {
         case "gemma":     return "Gemma"
         case "claude":    return "Claude API"
-        case "jarvis":    return "Jarvis (fallback)"
+        case "jarvis":    return "Jarvis"
+        case "kai":       return "Kai"
         case "on-device": return "Gemma"
         case .some(let s): return s
         case .none:       return "Gemma"

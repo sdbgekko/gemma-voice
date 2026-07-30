@@ -187,6 +187,9 @@ final class StreamingViewModel: ObservableObject {
             micSessions.forEach { action.applySessionEffect(to: $0) }
             isCapturing = false
             status = .muted
+            // Mic callbacks stop on mute, so the waveform would freeze at the
+            // last levels (Sherman 2026-07-30). Drop the bars to idle.
+            levelHistory = Array(repeating: 0, count: levelHistory.count)
         case .unmuteReArm:
             // Re-acquire the mic on the still-alive session — no rebuild.
             userMuted = false
