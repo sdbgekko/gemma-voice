@@ -12,6 +12,13 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.41",
+            date: "Jul 31",
+            hints: [
+                "When Gemma speaks up on her own — a follow-up or an update you didn't just ask for — you now see her words on screen too, not only hear them. Before, those came through as voice only with nothing in the list; now they show up as a card like every other reply.",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.40",
             date: "Jul 30",
             hints: [

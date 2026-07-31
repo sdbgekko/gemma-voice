@@ -788,7 +788,18 @@ final class StreamingViewModel: ObservableObject {
     }
 
     private func ledgerSetReply(_ text: String, source: String?) {
-        guard let i = latestPendingIndex else { return }
+        guard let i = latestPendingIndex else {
+            // Unprompted push (server /say broadcast): no open card exists —
+            // there was no user turn to create one — so the old `return` here
+            // dropped the reply from the visible ledger (audio played, no text
+            // bubble). Synthesize a reply-only card instead. Empty youText →
+            // TurnCardView shows no user bubble, just the Gemma reply.
+            ledger.append(LedgerTurn(youText: "", speaker: nil, reply: text,
+                                     source: source, rid: nil, phase: .speaking,
+                                     startedAt: Date(), answeredAt: nil))
+            if ledger.count > maxLedger { ledger.removeFirst(ledger.count - maxLedger) }
+            return
+        }
         ledger[i].reply = text
         ledger[i].source = source
         ledger[i].phase = .speaking
