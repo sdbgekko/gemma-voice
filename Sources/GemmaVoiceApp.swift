@@ -30,6 +30,15 @@ struct GemmaVoiceApp: App {
         // install; the toggle persists the user's choice thereafter.
         defaults.register(defaults: ["speakerOn": true])
 
+        // 0.2.47 (task #16, mid-speech cutoff): barge-in defaults ON. The
+        // half-duplex gate drops mic frames while Gemma's TTS plays; with
+        // barge-in OFF, talking over her was silently swallowed and read as
+        // "cut off mid-sentence." StreamingSession refreshes this key at
+        // TTS-start via bool(forKey:), which returns false for an unwritten
+        // key — register true so existing installs that never touched the
+        // toggle get barge-in without losing an explicit user choice.
+        defaults.register(defaults: ["bargeInEnabled": true])
+
         // Regression guard for the mute-cuts-mic-only hard rule. Asserts (traps
         // in DEBUG) if the mute contract regresses; a no-op in release builds
         // (assert is compiled out). See MuteSelfTest.swift.

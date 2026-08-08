@@ -12,6 +12,15 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.47",
+            date: "Aug 8",
+            hints: [
+                "Talking over Gemma no longer drops your words. The mic stays closed while she speaks (so she can't hear herself), but until now anything you said over her reply was silently thrown away — the server heard nothing and cut your turn, which felt like being cut off mid-sentence. Interrupting is now ON by default: speak over her for a beat and she stops talking, the mic opens, and your words go through as a normal turn. The mic also reopens faster after her last word (0.3s instead of 0.8s). You can turn interrupting off in Settings if it misfires in a noisy room.",
+                "Fixed the repeated-message loop after reconnect. If a reply never arrived (like when her voice pipeline was down), the recovery logic could redeliver the same turn over and over on every reconnect — one message repeated 15+ times. Recovery now runs at most twice per turn, remembers which turns were already answered so they can never replay, and still gives up entirely after 10 minutes.",
+                "You can now paste a copied photo. The photo button is a menu: Photo Library as before, plus Paste Image whenever there's a picture on your clipboard — copied from Safari, Messages, a screenshot, anywhere. It sends exactly like a picked photo, caption and all.",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.46",
             date: "Aug 7",
             hints: [

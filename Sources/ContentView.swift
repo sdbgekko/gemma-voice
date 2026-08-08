@@ -14,6 +14,9 @@ struct ContentView: View {
     /// SwiftUI face of PHPickerViewController — out-of-process, so no photo
     /// permission prompt. Cleared as soon as the pick is consumed.
     @State private var photoPick: PhotosPickerItem?
+    /// 0.2.47: the attach button became a menu (Photo Library / Paste Image),
+    /// so the picker now presents via this flag instead of a bare PhotosPicker.
+    @State private var showPhotoPicker = false
 
     private var preferredScheme: ColorScheme? {
         switch appearance {
@@ -239,7 +242,23 @@ struct ContentView: View {
         HStack(spacing: 8) {
             // Photo turn (0.2.45): pick a picture, send it with whatever's in
             // the draft as the caption (empty → a sensible default question).
-            PhotosPicker(selection: $photoPick, matching: .images, photoLibrary: .shared()) {
+            // 0.2.47: the attach button is now a menu — Photo Library opens the
+            // same picker; Paste Image (shown only when the clipboard holds an
+            // image) sends the copied image through the identical sendPhoto
+            // pipeline. hasImages is a metadata check and does NOT trigger the
+            // iOS paste prompt; reading .image on tap does, which is correct.
+            Menu {
+                Button {
+                    showPhotoPicker = true
+                } label: {
+                    Label("Photo Library", systemImage: "photo.on.rectangle")
+                }
+                if UIPasteboard.general.hasImages {
+                    Button(action: pasteCopiedImage) {
+                        Label("Paste Image", systemImage: "doc.on.clipboard")
+                    }
+                }
+            } label: {
                 Image(systemName: "photo")
                     .font(.system(size: 22))
                     .foregroundColor(.gemmaMicBlue)
@@ -248,6 +267,8 @@ struct ContentView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Send a photo")
+            .photosPicker(isPresented: $showPhotoPicker, selection: $photoPick,
+                          matching: .images, photoLibrary: .shared())
             .onChange(of: photoPick) { _, item in
                 guard let item else { return }
                 photoPick = nil
@@ -293,6 +314,21 @@ struct ContentView: View {
         draft = ""
         composeFocused = false
         viewModel.sendText(text)
+    }
+
+    /// 0.2.47: send the clipboard's image as a photo turn — the same
+    /// caption-from-draft + sendPhoto path the library pick uses, so the
+    /// resize/JPEG/upload pipeline and server handling are unchanged.
+    /// Reading .image (unlike hasImages) triggers the system paste prompt.
+    private func pasteCopiedImage() {
+        guard let image = UIPasteboard.general.image else {
+            viewModel.errorMessage = "Couldn't read an image from the clipboard."
+            return
+        }
+        let caption = draft
+        draft = ""
+        composeFocused = false
+        viewModel.sendPhoto(image, caption: caption)
     }
 
     private var muteButton: some View {

@@ -803,10 +803,32 @@ final class StreamingViewModel: ObservableObject {
             // (Closing this gap needs a client-supplied turn id server-side.)
             return
         }
-        NSLog("[GemmaVoice] redelivery: pending turn rid=\(rid) (trigger: \(trigger))")
+        // 0.2.47 (task #19): a rid whose response was already handled must
+        // never redeliver again — a resurrected record (stale assignRid, or a
+        // jetsam racing the cleared UserDefaults write) otherwise replays the
+        // same turn on every reconnect trigger.
+        guard !PendingTurnStore.isResolved(rid) else {
+            PendingTurnStore.clear()
+            return
+        }
+        // 0.2.47 (task #19): at most 2 redelivery cycles per rid, persisted so
+        // relaunches count too. The 2026-08-07 loop was one turn redelivering
+        // 15+ times across reconnects while TTS was down.
+        let attempt = PendingTurnStore.recordRedeliveryAttempt()
+        guard attempt <= PendingTurnStore.maxRedeliveryAttempts else {
+            PendingTurnStore.clear()
+            NSLog("[GemmaVoice] redelivery: gave up on rid=\(rid) (attempt cap)")
+            return
+        }
+        NSLog("[GemmaVoice] redelivery: pending turn rid=\(rid) (trigger: \(trigger), attempt \(attempt))")
         let client = TextTurnClient()   // /reply_text is agent-agnostic
         redeliveryTask = Task { @MainActor [weak self] in
             defer { self?.redeliveryTask = nil }
+            // Backoff for the second (final) cycle: don't hammer right after
+            // a cycle that just failed.
+            if attempt > 1 {
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+            }
             while !Task.isCancelled {
                 guard let self else { return }
                 // Resolved through the normal path (or user deleted it)?

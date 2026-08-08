@@ -4,7 +4,7 @@ struct SettingsView: View {
     @Binding var appearance: String
     @AppStorage("earbackVolume") private var earbackVolume: Double = 0.5
     @AppStorage("useOnDeviceSTT") private var useOnDeviceSTT: Bool = true
-    @AppStorage("bargeInEnabled") private var bargeInEnabled: Bool = false
+    @AppStorage("bargeInEnabled") private var bargeInEnabled: Bool = true
     @State private var onDeviceAuthResult: String? = nil
     @State private var sttTestState: STTTestState = .idle
     @State private var sttTestPartial: String = ""

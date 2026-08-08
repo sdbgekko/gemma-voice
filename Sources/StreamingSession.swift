@@ -235,7 +235,10 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
     // tail grace, not on the server's tts_end. Mirrors the on-device path.
     private var ttsBuffersInFlight = 0
     private let ttsBufferLock = NSLock()
-    private let ttsDrainTailGrace: TimeInterval = 0.8
+    // 0.2.47: 0.8 → 0.3 so the mic reopens faster after Gemma's last chunk —
+    // part of the mid-speech-cutoff fix (task #16); barge-in ON covers speech
+    // that lands while she's still talking.
+    private let ttsDrainTailGrace: TimeInterval = 0.3
 
     // Barge-in: track whether TTS is currently playing so the mic path can
     // detect user speech-over-TTS and signal an interrupt to the server.
@@ -246,7 +249,7 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
     /// turn. Written on main, read on the render thread — same lock-free posture
     /// as isTTSPlaying.
     private var externalPlaybackActive = false
-    private var bargeInEnabled = false  // refreshed at TTS-start; v0.2.13
+    private var bargeInEnabled = true   // refreshed at TTS-start; default ON since 0.2.47 (mid-speech cutoff fix)
     private var bargeInFrames = 0
     private let bargeInThreshold: Float = 0.04      // 0.05 was too high (missed normal speech), 0.02 was too low (background noise + TTS bleed self-triggered cuts)
     private let bargeInFramesToTrigger = 4          // ~128ms at 32ms — longer window prevents transient noise spikes from triggering
