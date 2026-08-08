@@ -12,6 +12,16 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.46",
+            date: "Aug 7",
+            hints: [
+                "No more two voices at once. A picture or typed reply and a spoken reply could both start playing at the same moment — you'd hear Gemma talking over herself. Now there's a single audio owner: whichever reply starts speaking, the other one stops, so you only ever hear one voice.",
+                "Gemma stops mishearing her own voice. While any reply is playing — including a picture or typed reply — the microphone stays closed, so her words can't be picked up and answered as if you'd said them. Muting still only affects the mic; the speaker button still only affects her voice.",
+                "A reply keeps talking when you leave the app. Switching apps, locking the screen, or pulling down Control Center mid-answer no longer cuts her off — the audio stays alive while a turn is in flight or a reply is playing, and only lets go once the mic is off and nothing's speaking. A dropped connection now also reconnects while you're away instead of waiting for you to come back.",
+                "Note: two small server-side hardening fixes (Gemma not double-speaking an announcement, and better filtering of her own echoed voice) need tonight's server update on her side to take effect — the app changes above work on their own.",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.45",
             date: "Aug 7",
             hints: [

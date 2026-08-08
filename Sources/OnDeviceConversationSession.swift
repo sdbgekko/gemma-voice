@@ -94,6 +94,10 @@ final class OnDeviceConversationSession: NSObject {
     private let stateLock = NSLock()
     private var _isMuted = false
     private var _isProcessing = false
+    /// 0.2.46 single audio owner: true while the view model's HTTP reply player
+    /// (photo/typed turns) is speaking. Gates mic capture like isProcessing so
+    /// this session's live mic can't re-capture the HTTP audio as a user turn.
+    private var _externalPlaybackActive = false
     private var _micHotAfter = Date.distantPast
     private var _converter: AVAudioConverter?
     private var _latestPartial = ""
@@ -158,6 +162,12 @@ final class OnDeviceConversationSession: NSObject {
     private var isProcessing: Bool {
         get { stateLock.lock(); defer { stateLock.unlock() }; return _isProcessing }
         set { stateLock.lock(); _isProcessing = newValue; stateLock.unlock() }
+    }
+    /// 0.2.46 single audio owner: gates mic capture while an external (HTTP
+    /// reply) player is speaking. Read on the render thread — stateLock-guarded.
+    private var externalPlaybackActive: Bool {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _externalPlaybackActive }
+        set { stateLock.lock(); _externalPlaybackActive = newValue; stateLock.unlock() }
     }
 
     // MARK: Utterance continuation (0.2.29)
@@ -298,6 +308,38 @@ final class OnDeviceConversationSession: NSObject {
         ) { [weak self] note in
             MainActor.assumeIsolated { self?.handleEngineConfigurationChange(note) }
         })
+        // 0.2.46 background audio: this DEFAULT on-device path had NO
+        // didEnterBackground observer (the WS path has had one since v0.2.x) —
+        // iOS could deactivate the audio session on backgrounding and the reply
+        // stopped speaking / the mic went dead until foreground. Mirror
+        // StreamingSession.handleBackground: re-assert setActive(true) and
+        // restart the engine, WITHOUT re-installing the mic tap (a muted
+        // session must stay mic-dark in the background).
+        lifecycleObservers.append(nc.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.handleDidEnterBackground() }
+        })
+    }
+
+    /// 0.2.46: re-prime the audio session/engine on backgrounding so a reply
+    /// keeps playing and the mic keeps capturing (UIBackgroundModes=audio is
+    /// necessary but not sufficient — iOS sometimes deactivates the session on
+    /// the transition). Does NOT rebuild the mic tap: mute-mic-only must survive
+    /// backgrounding, and an unmuted tap is still installed and valid.
+    private func handleDidEnterBackground() {
+        guard isRunning else { return }
+        NSLog("[GemmaVoice] on-device: backgrounded — re-priming audio session")
+        do {
+            try AVAudioSession.sharedInstance().setActive(true, options: [])
+        } catch {
+            NSLog("[GemmaVoice] on-device: background setActive failed: \(error)")
+        }
+        if !engine.isRunning {
+            NSLog("[GemmaVoice] on-device: engine stopped on background — restarting")
+            engine.prepare()
+            try? engine.start()
+        }
     }
 
     private func handleAudioInterruption(_ note: Notification) {
@@ -626,10 +668,27 @@ final class OnDeviceConversationSession: NSObject {
         playerNode.volume = on ? 1.0 : 0.0
     }
 
+    // MARK: - Single audio owner (0.2.46)
+
+    /// The view model's HTTP reply player (photo/typed turns) is taking over as
+    /// the sole audio owner. Silence THIS session's node so two TTS streams
+    /// never overlap, and gate mic capture for the duration so the external
+    /// audio can't be re-captured and transcribed as a user turn. Releasing
+    /// (on:false) re-opens the capture gate; the mic tap is never touched, so
+    /// mute state is unaffected.
+    @MainActor
+    func suppressForExternalPlayback(_ on: Bool) {
+        externalPlaybackActive = on
+        if on {
+            playerNode.stop()
+            playerNode.reset()
+        }
+    }
+
     // MARK: - Mic loop
 
     private func handleMicBuffer(_ buffer: AVAudioPCMBuffer) {
-        if isMuted || isProcessing {
+        if isMuted || isProcessing || externalPlaybackActive {
             DispatchQueue.main.async { [weak self] in self?.onEvent?(.level(0)) }
             return
         }

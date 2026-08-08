@@ -73,6 +73,11 @@ final class TextTurnClient: TextTurnClientProtocol {
             // give up. Was 90s, which expired mid-turn on a busy brain.
             cfg.timeoutIntervalForRequest = 175
             cfg.timeoutIntervalForResource = 175
+            // 0.2.46 background audio: don't let iOS treat the in-flight turn's
+            // connection as idle-killable while the app is backgrounded — the
+            // reply body streams over this session and must survive a
+            // backgrounding mid-turn so playback isn't cut short.
+            cfg.shouldUseExtendedBackgroundIdleMode = true
             self.session = URLSession(configuration: cfg)
         }
     }

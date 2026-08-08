@@ -240,6 +240,12 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
     // Barge-in: track whether TTS is currently playing so the mic path can
     // detect user speech-over-TTS and signal an interrupt to the server.
     private var isTTSPlaying = false
+    /// 0.2.46 single audio owner: true while the view model's HTTP reply player
+    /// (photo/typed turns) is speaking. Gates mic upload just like isTTSPlaying
+    /// so this session's live mic can't re-capture the HTTP audio as a user
+    /// turn. Written on main, read on the render thread — same lock-free posture
+    /// as isTTSPlaying.
+    private var externalPlaybackActive = false
     private var bargeInEnabled = false  // refreshed at TTS-start; v0.2.13
     private var bargeInFrames = 0
     private let bargeInThreshold: Float = 0.04      // 0.05 was too high (missed normal speech), 0.02 was too low (background noise + TTS bleed self-triggered cuts)
@@ -462,6 +468,25 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
         playerNode.volume = on ? 1.0 : 0.0
     }
 
+    // MARK: - Single audio owner (0.2.46)
+
+    /// Another player (the view model's HTTP reply player, for photo/typed
+    /// turns) is taking over as the sole audio owner. Silence THIS session's
+    /// node so two TTS streams never overlap, and gate mic upload for the
+    /// duration so the external audio can't be re-captured and transcribed as a
+    /// user turn. Releasing (on:false) simply re-opens the upload gate; the mic
+    /// tap was never touched, so mute state is unaffected.
+    @MainActor
+    func suppressForExternalPlayback(_ on: Bool) {
+        externalPlaybackActive = on
+        if on {
+            playerNode.stop()
+            playerNode.reset()
+            ttsBufferLock.lock(); ttsBuffersInFlight = 0; ttsBufferLock.unlock()
+            isTTSPlaying = false
+        }
+    }
+
     /// User swiped away the in-flight turn (a mis-captured cough/"mm-hmm"):
     /// stop its TTS locally and tell the server to flush the rest of the reply.
     /// Reuses the barge-in interrupt path — the mic/socket stay up, only this
@@ -562,7 +587,7 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
             // server transcribes our own voice as the user. RMS above is
             // still computed every frame so barge-in still works locally;
             // we just skip the upload.
-            if !isTTSPlaying {
+            if !isTTSPlaying && !externalPlaybackActive {
                 let data: Data = frame.withUnsafeBufferPointer { Data(buffer: $0) }
                 webSocket?.send(.data(data)) { _ in }
             }
@@ -583,9 +608,13 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
             switch result {
             case .failure(let error):
                 // Don't fire the disconnect path for our own cancel during
-                // backgrounding or shutdown, or if a reconnect is already in
-                // flight. handleForeground() rebuilds the socket on return.
-                if self.isReconnecting || self.wasBackgrounded || !self.isRunning {
+                // shutdown, or if a reconnect is already in flight.
+                // 0.2.46: `wasBackgrounded` was dropped here — a socket death
+                // while backgrounded used to bail out and never reconnect, so a
+                // reply couldn't arrive until foreground. Now the backoff
+                // reconnect runs in the background too (UIBackgroundModes=audio
+                // keeps us alive), and handleForeground still rebuilds on return.
+                if self.isReconnecting || !self.isRunning {
                     return
                 }
                 // P0-1: unexpected socket close (server restart, network blip).
@@ -729,8 +758,10 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask,
                     didCloseWith closeCode: URLSessionWebSocketTask.CloseCode,
                     reason: Data?) {
-        // Server-initiated close. Ignore our own teardown / backgrounding.
-        guard isRunning, !isReconnecting, !wasBackgrounded, webSocketTask === webSocket else { return }
+        // Server-initiated close. Ignore our own teardown / an in-flight
+        // reconnect. 0.2.46: `!wasBackgrounded` dropped so a peer close while
+        // backgrounded reconnects instead of stranding the socket dead.
+        guard isRunning, !isReconnecting, webSocketTask === webSocket else { return }
         NSLog("[GemmaVoice] WS closed by peer (code \(closeCode.rawValue))")
         handleDisconnect(nil)
     }

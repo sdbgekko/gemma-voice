@@ -371,7 +371,7 @@ final class StreamingViewModel: ObservableObject {
                 // Best-effort voice: only when the speaker is on and audio came back.
                 let pcm = sink.take()
                 if self.speakerOn, !pcm.isEmpty {
-                    try? self.textReplyPlayer.play(data: StreamingViewModel.pcm16WAV(pcm, sampleRate: 24000))
+                    self.playHTTPReply(StreamingViewModel.pcm16WAV(pcm, sampleRate: 24000))
                 }
             } catch {
                 let reason = self.textTurnFailureReason(error, agentName: agentName)
@@ -441,7 +441,7 @@ final class StreamingViewModel: ObservableObject {
                 self.ledgerAnswered()
                 let pcm = sink.take()
                 if self.speakerOn, !pcm.isEmpty {
-                    try? self.textReplyPlayer.play(data: StreamingViewModel.pcm16WAV(pcm, sampleRate: 24000))
+                    self.playHTTPReply(StreamingViewModel.pcm16WAV(pcm, sampleRate: 24000))
                 }
             } catch {
                 // Transport died. With the rid persisted the reply is still in
@@ -502,6 +502,48 @@ final class StreamingViewModel: ObservableObject {
         h.append(u32(dataLen))
         h.append(pcm)
         return h
+    }
+
+    // MARK: - Single audio owner (0.2.46)
+    //
+    // Two uncoordinated players used to speak at once: `textReplyPlayer`
+    // (AVAudioPlayer, HTTP photo/typed replies) and the live session's
+    // AVAudioPlayerNode (WS / on-device voice turns). A photo turn overlapping
+    // a live WS turn produced two simultaneous voices, and the HTTP player's
+    // audio bled back into the still-hot live mic and was transcribed as a user
+    // turn (self-echo). Fix: make the two MUTUALLY EXCLUSIVE. Starting the HTTP
+    // player stops the live node and gates the live mic for the duration;
+    // starting a live node turn stops the HTTP player. Only one TTS stream is
+    // ever audible, and the mic is suppressed while ANY TTS plays.
+
+    /// Play an HTTP (photo/typed) reply as the SOLE audio owner: silence the
+    /// live session's node and suppress its mic capture so this audio can't be
+    /// re-transcribed, then release the suppression when playback finishes.
+    private func playHTTPReply(_ data: Data) {
+        session?.suppressForExternalPlayback(true)
+        onDeviceSession?.suppressForExternalPlayback(true)
+        textReplyPlayer.onFinish = { [weak self] in
+            Task { @MainActor in self?.releaseExternalPlaybackSuppression() }
+        }
+        do {
+            try textReplyPlayer.play(data: data)
+        } catch {
+            releaseExternalPlaybackSuppression()
+        }
+    }
+
+    /// A live node turn is taking over as audio owner — stop any HTTP reply that
+    /// is still playing and release its mic suppression. AVAudioPlayer.stop()
+    /// does NOT call the finish delegate, so the release must be explicit here.
+    private func stopHTTPReplyPlayback() {
+        textReplyPlayer.stop()
+        releaseExternalPlaybackSuppression()
+    }
+
+    /// Re-open the live mic gate closed while an HTTP reply was audible.
+    private func releaseExternalPlaybackSuppression() {
+        session?.suppressForExternalPlayback(false)
+        onDeviceSession?.suppressForExternalPlayback(false)
     }
 
     // MARK: - Voice enrollment mic handoff (0.2.30)
@@ -654,17 +696,30 @@ final class StreamingViewModel: ObservableObject {
             } else if !isCapturing && !userMuted {
                 requestMicPermission()
             }
-        case .background, .inactive:
-            // 0.2.44 in-flight keepalive: leaving the foreground with a turn
-            // still awaiting the brain — ask iOS for extended runtime so the
-            // 25-160s wait can finish, and make the wait visible on the lock
-            // screen. Only for a live conversation: a muted/torn-down session
-            // has its request cancelled below anyway, and redelivery (not a
-            // background task) is the recovery for that.
-            if conversationActive && turnAwaitingReply {
+        case .inactive:
+            // 0.2.46: Control-Center pull-down, notification-center peek, and
+            // app-switcher scrub all deliver .inactive — NOT a real background.
+            // Never tear down here: a transient peek must not kill a live
+            // session or a playing reply. If a turn/reply is busy, buy
+            // background runtime in case a true .background follows.
+            if audioBusy {
                 beginKeepalive()
             }
-            if !conversationActive {
+        case .background:
+            // 0.2.44/0.2.46 in-flight keepalive: leaving the foreground with a
+            // turn still awaiting the brain OR a reply still playing — ask iOS
+            // for extended runtime so the wait / playback can finish, and make
+            // it visible on the lock screen. Now fires even when muted (audio
+            // can be busy with the mic off).
+            if audioBusy {
+                beginKeepalive()
+            }
+            // 0.2.46: tear the audio graph down ONLY when the mic isn't hot AND
+            // no audio is busy. A muted session with a reply still playing, or
+            // any turn in flight, stays up so it isn't cut on backgrounding.
+            // An idle/idle-muted app (not capturing, not busy) still releases
+            // everything — the resurrection/jetsam guard is preserved.
+            if !isCapturing && !audioBusy {
                 teardownAudio()
             }
         @unknown default:
@@ -697,10 +752,21 @@ final class StreamingViewModel: ObservableObject {
     /// The active redelivery poll, if any — one at a time.
     private var redeliveryTask: Task<Void, Never>?
 
-    /// A turn is dispatched and its reply hasn't rendered yet.
+    /// A turn is dispatched and its reply hasn't rendered yet, OR a reply is
+    /// actively playing. 0.2.46 adds `.playing`: backgrounding while Gemma is
+    /// mid-sentence must keep the audio graph alive (Sherman's "it stops
+    /// talking when I switch apps" complaint) and hold the background-runtime
+    /// keepalive until the reply finishes.
     private var turnAwaitingReply: Bool {
-        status == .thinking || status == .heardYou || PendingTurnStore.pending() != nil
+        status == .thinking || status == .heardYou || status == .playing
+            || PendingTurnStore.pending() != nil
     }
+
+    /// Audio is doing something the user would notice being cut: a turn is in
+    /// flight (awaiting the brain) or a reply is playing. Backgrounding while
+    /// this is true must NOT tear the audio graph down, even if the mic is
+    /// muted. 0.2.46 background-audio fix.
+    private var audioBusy: Bool { turnAwaitingReply }
 
     private func beginKeepalive() {
         guard keepaliveTaskID == .invalid else { return }
@@ -855,6 +921,9 @@ final class StreamingViewModel: ObservableObject {
                 ledgerFillYou(text, speaker: "sherman")
             }
         case .transcriptGemma(let text, let brain):
+            // 0.2.46 single audio owner: a live node turn is about to speak —
+            // stop any HTTP reply still playing so two voices never overlap.
+            stopHTTPReplyPlayback()
             if !text.isEmpty {
                 // A2 (2026-08-07): badge the brain that ACTUALLY answered
                 // (server X-Brain header) instead of hardcoding "gemma" — a
@@ -944,6 +1013,9 @@ final class StreamingViewModel: ObservableObject {
             // STT result arrived — promote heardYou → thinking, waiting for reply.
             if status == .heardYou { status = .thinking }
         case .transcriptGemma(let text, let source):
+            // 0.2.46 single audio owner: a live WS turn is about to speak — stop
+            // any HTTP reply still playing so two voices never overlap.
+            stopHTTPReplyPlayback()
             if !text.isEmpty {
                 appendTurn(text: text, isGemma: true, source: source, speaker: nil)
                 ledgerSetReply(text, source: source)
