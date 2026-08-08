@@ -17,6 +17,7 @@
 		3F06632F0672B53B15C1588F /* Agent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D3051CF4F948D7AF5DB541F /* Agent.swift */; };
 		4454328DB8B78B9CB6C62396 /* GemmaVoiceLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57ED71D5A6411BDF3D73C5C /* GemmaVoiceLiveActivity.swift */; };
 		4CD2F32CD51A0ED3C2E62066 /* LiveActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 817BAD4EC8A33CC5333DEFFF /* LiveActivityAttributes.swift */; };
+		4E9D736F4595A170AB456FBF /* TalkToGemmaIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5700BA15F1DD06242104A41 /* TalkToGemmaIntent.swift */; };
 		4EFA05BDBF9FBEBBA99E009D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0EEB15BAD7C61FB0A6400CC8 /* Assets.xcassets */; };
 		5450EBAEE3F002364577D99C /* TurnCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEC00FA2E266E16D066BE509 /* TurnCardView.swift */; };
 		61FF0FB62CB37DCFBB3725B3 /* TextTurnClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B37F3B1399C2FF8241D8EE53 /* TextTurnClient.swift */; };
@@ -116,6 +117,7 @@
 		B5886E5F151902131B1C214D /* StreamingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingViewModel.swift; sourceTree = "<group>"; };
 		BB9939742B7E0E11699FD6EA /* GemmaVoiceWidgetsBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GemmaVoiceWidgetsBundle.swift; sourceTree = "<group>"; };
 		D4FD7C7680847FDA53221FF1 /* AudioPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlayer.swift; sourceTree = "<group>"; };
+		D5700BA15F1DD06242104A41 /* TalkToGemmaIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalkToGemmaIntent.swift; sourceTree = "<group>"; };
 		D742BFD46C012F4D7DAA6DB0 /* StreamingSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingSession.swift; sourceTree = "<group>"; };
 		D76531DC826ED3D1FF16910B /* GemmaVoiceApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GemmaVoiceApp.swift; sourceTree = "<group>"; };
 		DC1D0264DA93B2E2AD5E201C /* GemmaVoiceWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GemmaVoiceWatchApp.swift; sourceTree = "<group>"; };
@@ -193,6 +195,7 @@
 				002379C26C7C5A9EEBBBE77E /* SpeakerSelfTest.swift */,
 				D742BFD46C012F4D7DAA6DB0 /* StreamingSession.swift */,
 				B5886E5F151902131B1C214D /* StreamingViewModel.swift */,
+				D5700BA15F1DD06242104A41 /* TalkToGemmaIntent.swift */,
 				B37F3B1399C2FF8241D8EE53 /* TextTurnClient.swift */,
 				917687C6344D613AAF20EC9E /* TranscriptPostProcessor.swift */,
 				AEC00FA2E266E16D066BE509 /* TurnCardView.swift */,
@@ -394,6 +397,7 @@
 				A28361FA8A4A85424F567949 /* SpeakerSelfTest.swift in Sources */,
 				CD71851F1C4E9AF485D0CEBF /* StreamingSession.swift in Sources */,
 				0FAE1BADB6DD3097BE0CE9FA /* StreamingViewModel.swift in Sources */,
+				4E9D736F4595A170AB456FBF /* TalkToGemmaIntent.swift in Sources */,
 				61FF0FB62CB37DCFBB3725B3 /* TextTurnClient.swift in Sources */,
 				D9890576BB70C610741C9CCD /* TranscriptPostProcessor.swift in Sources */,
 				5450EBAEE3F002364577D99C /* TurnCardView.swift in Sources */,

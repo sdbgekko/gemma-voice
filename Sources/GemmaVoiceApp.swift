@@ -71,6 +71,15 @@ struct GemmaVoiceApp: App {
                 // feedback_ios_url_scheme_foreground_only.
                 .onOpenURL { url in
                     guard url.scheme == "gemmavoice" else { return }
+                    // 0.2.43: gemmavoice://talk = the Action-Button fast path
+                    // over the URL scheme, so the widget / Live Activity can
+                    // reuse it. Raises the same TalkActivation the App Intent
+                    // uses — force-unmute + start listening immediately.
+                    // gemmavoice://open (and anything else) keeps the 0.2.42
+                    // behavior: foreground + resume-if-idle.
+                    if url.host == "talk" {
+                        TalkActivation.request(source: "url-scheme")
+                    }
                     viewModel.handleScenePhase(.active)
                 }
         }

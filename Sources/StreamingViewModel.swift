@@ -121,6 +121,23 @@ final class StreamingViewModel: ObservableObject {
             MainActor.assumeIsolated { self.teardownAudio() }
         }
 
+        // 0.2.43: Action-Button / Siri / gemmavoice://talk fast path. The
+        // notification covers the warm case (app already running when the
+        // intent fires — a scene-phase transition isn't guaranteed); the
+        // cold-launch race is covered by the pending flag consumed in
+        // handleScenePhase(.active). consume() is one-shot, so whichever
+        // path runs first wins and the other is a no-op.
+        NotificationCenter.default.addObserver(
+            forName: TalkActivation.notification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self = self else { return }
+                if TalkActivation.consume() { self.startListeningNow() }
+            }
+        }
+
         // Push every status change to the Live Activity. The first non-muted
         // transition starts the activity; .connectionClosed ends it.
         statusCancellable = $status
@@ -538,7 +555,12 @@ final class StreamingViewModel: ObservableObject {
     func handleScenePhase(_ phase: ScenePhase) {
         switch phase {
         case .active:
-            if !isCapturing && !userMuted {
+            // 0.2.43: a pending Action-Button / Siri / gemmavoice://talk
+            // activation overrides a sticky mute — the user explicitly asked
+            // to talk, so clear mute and listen. Otherwise the normal resume.
+            if TalkActivation.consume() {
+                startListeningNow()
+            } else if !isCapturing && !userMuted {
                 requestMicPermission()
             }
         case .background, .inactive:
@@ -548,6 +570,21 @@ final class StreamingViewModel: ObservableObject {
         @unknown default:
             break
         }
+    }
+
+    /// 0.2.43: Action-Button / Siri / gemmavoice://talk fast path — force an
+    /// active listening state via the SAME code a manual session-start uses
+    /// (no duplicated audio-session logic). Clears a sticky mute through the
+    /// existing mute contract (re-arm or cold-start), otherwise takes the
+    /// same entry the scene-phase .active resume takes. Idempotent when
+    /// already listening.
+    func startListeningNow() {
+        if userMuted {
+            toggleMute()            // unmuteReArm / unmuteColdStart per MuteLogic
+        } else if !isCapturing {
+            requestMicPermission()  // → startSession(), same as .active resume
+        }
+        // capturing && !muted → already listening; nothing to do.
     }
 
     /// Map OnDeviceConversationSession events onto the same UI surface as

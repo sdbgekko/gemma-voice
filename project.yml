@@ -22,7 +22,7 @@ targets:
       path: WidgetResources/Info.plist
       properties:
         CFBundleDisplayName: GemmaVoice Widgets
-        CFBundleShortVersionString: "0.2.42"
+        CFBundleShortVersionString: "0.2.43"
         CFBundleVersion: "26"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
@@ -47,7 +47,7 @@ targets:
       path: WatchResources/Info.plist
       properties:
         CFBundleDisplayName: GemmaVoice
-        CFBundleShortVersionString: "0.2.42"
+        CFBundleShortVersionString: "0.2.43"
         CFBundleVersion: "26"
         WKApplication: true
         WKCompanionAppBundleIdentifier: com.shermanbrown.gemmavoice
@@ -74,7 +74,7 @@ targets:
       path: Resources/Info.plist
       properties:
         CFBundleDisplayName: GemmaVoice
-        CFBundleShortVersionString: "0.2.42"
+        CFBundleShortVersionString: "0.2.43"
         CFBundleVersion: "26"
         # A4 (2026-08-07): registers the gemmavoice:// scheme so the Live
         # Activity's widgetURL (gemmavoice://open) actually opens the app —
@@ -83,6 +83,12 @@ targets:
           - CFBundleURLName: com.shermanbrown.gemmavoice
             CFBundleURLSchemes:
               - gemmavoice
+        # 0.2.43: lets Siri treat "Gemma" as this app's name so the App
+        # Shortcut phrases "Talk to Gemma" / "Hey Gemma" resolve naturally
+        # (AppShortcut phrases must interpolate .applicationName; this key
+        # supplies the synonym). See TalkToGemmaIntent.swift.
+        INAlternateAppNames:
+          - Gemma
         ITSAppUsesNonExemptEncryption: false
         NSSupportsLiveActivities: true
         UILaunchScreen:

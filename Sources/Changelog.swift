@@ -12,6 +12,15 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.43",
+            date: "Aug 7",
+            hints: [
+                "GemmaVoice can live on your iPhone's Action Button. Set it once (Settings → Action Button → Shortcuts → Talk to Gemma) and a single press opens the app straight into listening — mic hot, no hunting for the app, no extra taps. Unmutes automatically if you'd left it muted.",
+                "Siri knows the way in too: say \"Talk to GemmaVoice\" — or just \"Talk to Gemma\" / \"Hey Gemma\" — and you land in the same ready-to-listen state. It also shows up in the Shortcuts app for automations.",
+                "Under the hood the same fast path answers gemmavoice://talk, so the widget and Live Activity can jump straight into listening in a future build.",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.42",
             date: "Aug 7",
             hints: [
