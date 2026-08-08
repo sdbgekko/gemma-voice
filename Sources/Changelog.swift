@@ -12,6 +12,15 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.45",
+            date: "Aug 7",
+            hints: [
+                "Send Gemma a picture. There's a photo button next to the message box — pick something from your library, add a caption if you like (or don't — she'll be asked what she thinks of it), and it lands in the conversation like any other turn. She can actually look at the picture on her side and talk about it with you.",
+                "The photo shows up in the conversation card along with your caption and her reply, and if the connection drops while she's looking, the reply is recovered the same way dropped voice replies are.",
+                "Note: talking about pictures needs tonight's server update on Gemma's side — until that restart lands, a photo turn gets a normal reply that can't see the image yet.",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.44",
             date: "Aug 7",
             hints: [

@@ -854,6 +854,7 @@ final class OnDeviceConversationSession: NSObject {
                 speakerHint: "sherman",
                 sessionId: sessionId,
                 wavBase64: wavBase64,
+                imageBase64: nil,   // voice turns carry no photo (0.2.45)
                 onTurnId: { rid in
                     // URLSession delivers this off-main; the store is
                     // UserDefaults-backed and thread-safe.
@@ -1213,11 +1214,14 @@ protocol TextTurnClientProtocol {
     /// as it arrives. Returns the reply text (from the X-Reply-Text header).
     /// wavBase64 (0.2.31) is the utterance audio as a base64 16kHz mono
     /// PCM16 WAV for server-side speaker verification; nil omits the field.
+    /// imageBase64 (0.2.45) is a downscaled JPEG for photo turns — the server
+    /// saves it and hands desk-Gemma the file path; nil omits the field.
     func postText(
         _ text: String,
         speakerHint: String,
         sessionId: String,
         wavBase64: String?,
+        imageBase64: String?,
         onTurnId: @escaping (String) -> Void,
         onAudioChunk: @escaping (Data) -> Void
     ) async throws -> TextTurnResult
@@ -1248,6 +1252,7 @@ struct StubTextTurnClient: TextTurnClientProtocol {
                   speakerHint: String,
                   sessionId: String,
                   wavBase64: String?,
+                  imageBase64: String?,
                   onTurnId: @escaping (String) -> Void,
                   onAudioChunk: @escaping (Data) -> Void) async throws -> TextTurnResult {
         throw NSError(

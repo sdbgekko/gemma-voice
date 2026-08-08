@@ -90,6 +90,7 @@ final class TextTurnClient: TextTurnClientProtocol {
         speakerHint: String,
         sessionId: String,
         wavBase64: String?,
+        imageBase64: String?,
         onTurnId: @escaping (String) -> Void,
         onAudioChunk: @escaping (Data) -> Void
     ) async throws -> TextTurnResult {
@@ -115,6 +116,12 @@ final class TextTurnClient: TextTurnClientProtocol {
         // nil so the server keeps its Gemma default.
         if let agent {
             payload["agent"] = agent
+        }
+        // Photo turn (0.2.45): downscaled JPEG as base64. Rides inside the
+        // signed body, so the existing HMAC covers the image too. The server
+        // saves it and injects the file path with the turn.
+        if let imageBase64 {
+            payload["image_base64"] = imageBase64
         }
         let bodyData = try JSONSerialization.data(withJSONObject: payload)
         req.httpBody = bodyData

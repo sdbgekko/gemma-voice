@@ -338,6 +338,7 @@ final class StreamingViewModel: ObservableObject {
                     speakerHint: "sherman",
                     sessionId: sid,
                     wavBase64: nil,
+                    imageBase64: nil,
                     // Typed turns don't participate in redelivery (a failed
                     // send is visible right there in the ledger; retype to
                     // retry) — and must not overwrite a VOICE turn's pending
@@ -376,6 +377,84 @@ final class StreamingViewModel: ObservableObject {
                 let reason = self.textTurnFailureReason(error, agentName: agentName)
                 self.ledgerDropped(reason)
                 self.errorMessage = reason
+            }
+        }
+    }
+
+    /// Send a photo (with an optional typed caption) as a turn (0.2.45).
+    /// Mirrors sendText's ledger sequence, plus: the JPEG rides the same
+    /// /text_turn body as `image_base64` (HMAC-covered), the card shows the
+    /// thumbnail, and — unlike typed turns — photo turns DO participate in
+    /// 0.2.44 redelivery: Gemma Reading the image can outlive the transport,
+    /// and re-picking a photo to retry is worse than retyping a line.
+    func sendPhoto(_ image: UIImage, caption: String) {
+        guard let jpeg = PhotoTurn.jpegForUpload(image) else {
+            errorMessage = "Couldn't process that photo."
+            return
+        }
+        let trimmed = caption.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = trimmed.isEmpty ? "What do you think of this picture?" : trimmed
+        let agent = selectedAgentID
+        let agentName = VoiceAgent.by(id: agent).displayName
+
+        appendTurn(text: text, isGemma: false, source: "typed", speaker: "sherman")
+        ledgerAppendHeard()
+        ledgerFillYou(text, speaker: "sherman")
+        if let i = latestPendingIndex { ledger[i].thumbnailData = jpeg }
+
+        let client = TextTurnClient(agent: agent)
+        let sink = PCMSink()
+        // NOT a smoke-pattern sid ("photo-" ≠ ^(smoke|test)) — injects normally.
+        let sid = "photo-\(UUID().uuidString.prefix(8))"
+        PendingTurnStore.begin(text: text)
+
+        Task { @MainActor in
+            do {
+                let result = try await client.postText(
+                    text,
+                    speakerHint: "sherman",
+                    sessionId: sid,
+                    wavBase64: nil,
+                    imageBase64: jpeg.base64EncodedString(),
+                    // X-Turn-Id lands before the audio body — persist it so a
+                    // dead transport can still recover the reply (0.2.44 flow,
+                    // unchanged for photo turns).
+                    onTurnId: { PendingTurnStore.assignRid($0) },
+                    onAudioChunk: { sink.append($0) }
+                )
+                var reply = result.replyText
+                if reply.isEmpty, let rid = result.rid {
+                    for _ in 0..<3 {
+                        if let late = try? await client.fetchReplyText(rid: rid), !late.isEmpty {
+                            reply = late
+                            break
+                        }
+                        try? await Task.sleep(nanoseconds: 400_000_000)
+                    }
+                }
+                PendingTurnStore.clear()
+                if !reply.isEmpty {
+                    let source = result.brain ?? agent
+                    self.appendTurn(text: reply, isGemma: true, source: source, speaker: nil)
+                    self.ledgerSetReply(reply, source: source)
+                }
+                self.ledgerAnswered()
+                let pcm = sink.take()
+                if self.speakerOn, !pcm.isEmpty {
+                    try? self.textReplyPlayer.play(data: StreamingViewModel.pcm16WAV(pcm, sampleRate: 24000))
+                }
+            } catch {
+                // Transport died. With the rid persisted the reply is still in
+                // the server-side store — poll it (same recovery as voice
+                // turns). Without a rid there's no fetch key: honest drop.
+                if PendingTurnStore.pending()?.rid != nil {
+                    self.recoverPendingTurnIfNeeded(trigger: "photo-turn-error")
+                } else {
+                    PendingTurnStore.clear()
+                    let reason = self.textTurnFailureReason(error, agentName: agentName)
+                    self.ledgerDropped(reason)
+                    self.errorMessage = reason
+                }
             }
         }
     }

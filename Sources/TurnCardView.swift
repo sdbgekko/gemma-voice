@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// One card in the turn ledger: a lifecycle track (Heard → Sent → Working →
 /// Speaking), the user's words, Gemma's reply, and a live equalizer while she
@@ -11,6 +12,17 @@ struct TurnCardView: View {
         VStack(alignment: .leading, spacing: 10) {
             header
             lifecycleTrack
+            // Photo turn (0.2.45): the sent picture, above the caption.
+            if let data = turn.thumbnailData, let ui = UIImage(data: data) {
+                Image(uiImage: ui)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(maxWidth: .infinity)
+                    .frame(maxHeight: 180)
+                    .clipped()
+                    .cornerRadius(12)
+                    .accessibilityLabel("Photo you sent")
+            }
             if !turn.youText.isEmpty {
                 Text(turn.youText)
                     .font(.callout)

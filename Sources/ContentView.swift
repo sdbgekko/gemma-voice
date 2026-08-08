@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 import UIKit
 
@@ -9,6 +10,10 @@ struct ContentView: View {
     /// modality alongside "tap to talk".
     @State private var draft: String = ""
     @FocusState private var composeFocused: Bool
+    /// Photo turn (0.2.45): the library pick in flight. PhotosPicker is the
+    /// SwiftUI face of PHPickerViewController — out-of-process, so no photo
+    /// permission prompt. Cleared as soon as the pick is consumed.
+    @State private var photoPick: PhotosPickerItem?
 
     private var preferredScheme: ColorScheme? {
         switch appearance {
@@ -232,6 +237,32 @@ struct ContentView: View {
     /// while a voice session is live, muted, or disconnected.
     private var composeBar: some View {
         HStack(spacing: 8) {
+            // Photo turn (0.2.45): pick a picture, send it with whatever's in
+            // the draft as the caption (empty → a sensible default question).
+            PhotosPicker(selection: $photoPick, matching: .images, photoLibrary: .shared()) {
+                Image(systemName: "photo")
+                    .font(.system(size: 22))
+                    .foregroundColor(.gemmaMicBlue)
+                    .frame(width: 40, height: 40)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Send a photo")
+            .onChange(of: photoPick) { _, item in
+                guard let item else { return }
+                photoPick = nil
+                let caption = draft
+                draft = ""
+                composeFocused = false
+                Task {
+                    guard let data = try? await item.loadTransferable(type: Data.self),
+                          let image = UIImage(data: data) else {
+                        viewModel.errorMessage = "Couldn't load that photo."
+                        return
+                    }
+                    viewModel.sendPhoto(image, caption: caption)
+                }
+            }
             TextField("Type a message…", text: $draft)
                 .textFieldStyle(.plain)
                 .padding(.horizontal, 12)

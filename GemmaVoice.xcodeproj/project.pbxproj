@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		09643E533C6B5239D1486ED1 /* VoiceEnrollmentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 900C6E0BA6DE932F4AF9F086 /* VoiceEnrollmentView.swift */; };
+		0CA07CB3AA1E3B5572DBA195 /* PhotoTurn.swift in Sources */ = {isa = PBXBuildFile; fileRef = 033D5C0046C83EDE0E78E4A6 /* PhotoTurn.swift */; };
 		0FAE1BADB6DD3097BE0CE9FA /* StreamingViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5886E5F151902131B1C214D /* StreamingViewModel.swift */; };
 		1F9CE56357F6520B8C9A3C3A /* AudioPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4FD7C7680847FDA53221FF1 /* AudioPlayer.swift */; };
 		2510B64B3DB18F0CC24D7174 /* GemmaVoiceWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 459DFF39F43E10B8033E48FA /* GemmaVoiceWidgets.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -96,6 +97,7 @@
 /* Begin PBXFileReference section */
 		002379C26C7C5A9EEBBBE77E /* SpeakerSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeakerSelfTest.swift; sourceTree = "<group>"; };
 		0060A6D021323561FFBBE0A6 /* MuteSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MuteSelfTest.swift; sourceTree = "<group>"; };
+		033D5C0046C83EDE0E78E4A6 /* PhotoTurn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoTurn.swift; sourceTree = "<group>"; };
 		0478F1B10235AA78A91BB431 /* EarbackTone.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EarbackTone.swift; sourceTree = "<group>"; };
 		0EEB15BAD7C61FB0A6400CC8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		161B6A8D1B9F353B4DBEFA99 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -200,6 +202,7 @@
 				58C0170FF31B87119E0BF6F9 /* OnDeviceConversationSession.swift */,
 				65084D5F1C669037DFC39BB8 /* OnDeviceSTT.swift */,
 				C3DF8B561A3B27998CF1E0FB /* PendingTurnStore.swift */,
+				033D5C0046C83EDE0E78E4A6 /* PhotoTurn.swift */,
 				5C01C90D094D9379036D50D5 /* SettingsView.swift */,
 				002379C26C7C5A9EEBBBE77E /* SpeakerSelfTest.swift */,
 				D742BFD46C012F4D7DAA6DB0 /* StreamingSession.swift */,
@@ -406,6 +409,7 @@
 				8B31CF5E9C43868068B4F17E /* OnDeviceConversationSession.swift in Sources */,
 				6619B870724825B2BE6E06D2 /* OnDeviceSTT.swift in Sources */,
 				89C8CBA8336B350AB6711AE7 /* PendingTurnStore.swift in Sources */,
+				0CA07CB3AA1E3B5572DBA195 /* PhotoTurn.swift in Sources */,
 				C19AF2182638FD7DE842A2DA /* ServerConfig.swift in Sources */,
 				DE69138449588901BE8F516B /* SettingsView.swift in Sources */,
 				A28361FA8A4A85424F567949 /* SpeakerSelfTest.swift in Sources */,

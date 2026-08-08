@@ -30,4 +30,7 @@ struct LedgerTurn: Identifiable {
     var phase: TurnPhase
     var startedAt: Date?      // when phase entered .working — anchors the timer
     var answeredAt: Date?     // when phase entered .answered — freezes the timer
+    /// Photo turn (0.2.45): the JPEG that was sent, rendered as a thumbnail in
+    /// the card. Defaulted so every existing memberwise init stays valid.
+    var thumbnailData: Data? = nil
 }
