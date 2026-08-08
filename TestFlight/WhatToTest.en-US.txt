@@ -1,0 +1,9 @@
+0.2.47 — three fixes:
+
+• Interrupt Gemma: talk over her mid-reply and she stops and listens — your words come through instead of being dropped. (Settings toggle if it misfires; if she starts hearing herself, turn it off there.)
+
+• Repeat-loop fixed: a missed reply now redelivers at most twice, never endlessly.
+
+• Paste a photo: copy an image anywhere, tap the photo button → "Paste Image."
+
+Test: talk over her mid-story · kill your connection mid-turn and reconnect · paste a screenshot.
