@@ -30,7 +30,9 @@ import CryptoKit
 
 final class TextTurnClient: TextTurnClientProtocol {
     /// Tailscale IP of JMM. Same host as the WebSocket. HTTP port 9202.
-    static let defaultBase = URL(string: "http://100.80.225.86:9202")!
+    /// 0.2.44: sourced from Shared/ServerConfig.swift so the widget's /health
+    /// poll and the app agree on one host constant.
+    static let defaultBase = GemmaVoiceServer.httpBase
 
     enum TextTurnError: Error {
         case badResponse(Int)
@@ -88,6 +90,7 @@ final class TextTurnClient: TextTurnClientProtocol {
         speakerHint: String,
         sessionId: String,
         wavBase64: String?,
+        onTurnId: @escaping (String) -> Void,
         onAudioChunk: @escaping (Data) -> Void
     ) async throws -> TextTurnResult {
         var req = URLRequest(url: baseURL.appendingPathComponent("text_turn"))
@@ -97,6 +100,10 @@ final class TextTurnClient: TextTurnClientProtocol {
             "text": text,
             "speaker_hint": speakerHint,
             "session_id": sessionId,
+            // 0.2.44: "simulator"/"device" so sim smoke traffic stops
+            // polluting device telemetry (server reads this since tonight's
+            // stream_server.py per-turn metrics work).
+            "environment": GemmaVoiceServer.environment,
         ]
         // Per-turn speaker verification (0.2.31): the utterance audio as a
         // base64 16kHz mono PCM16 WAV. Optional — the server behaves exactly
@@ -172,6 +179,11 @@ final class TextTurnClient: TextTurnClientProtocol {
         // (streaming and classic). Used to fetch the reply text after the
         // audio finishes when X-Reply-Text was absent.
         let turnId = (http.value(forHTTPHeaderField: "X-Turn-Id") ?? "").trimmingCharacters(in: .whitespaces)
+        // 0.2.44 redelivery: surface the turn id the moment headers arrive —
+        // BEFORE the audio body streams — so the caller can persist it. If the
+        // connection dies mid-body, the persisted id is the fetch key that
+        // recovers this turn's reply via GET /reply_text.
+        if !turnId.isEmpty { onTurnId(turnId) }
         // X-Brain (2026-08-07): the brain that ACTUALLY answered ("gemma" |
         // "jarvis" | "kai"). On a busy-fallback turn this differs from the
         // requested agent — the UI badges the reply with the real source so

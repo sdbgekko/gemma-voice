@@ -22,10 +22,15 @@ targets:
       path: WidgetResources/Info.plist
       properties:
         CFBundleDisplayName: GemmaVoice Widgets
-        CFBundleShortVersionString: "0.2.43"
-        CFBundleVersion: "26"
+        CFBundleShortVersionString: "0.2.44"
+        CFBundleVersion: "27"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
+        # 0.2.44: the home-screen widget's TimelineProvider polls the
+        # voice-turn server's plain-HTTP /health (:9202) — same ATS carve-out
+        # the app has always needed for its Tailscale-IP endpoints.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.shermanbrown.gemmavoice.widgets
@@ -47,8 +52,8 @@ targets:
       path: WatchResources/Info.plist
       properties:
         CFBundleDisplayName: GemmaVoice
-        CFBundleShortVersionString: "0.2.43"
-        CFBundleVersion: "26"
+        CFBundleShortVersionString: "0.2.44"
+        CFBundleVersion: "27"
         WKApplication: true
         WKCompanionAppBundleIdentifier: com.shermanbrown.gemmavoice
     settings:
@@ -74,8 +79,8 @@ targets:
       path: Resources/Info.plist
       properties:
         CFBundleDisplayName: GemmaVoice
-        CFBundleShortVersionString: "0.2.43"
-        CFBundleVersion: "26"
+        CFBundleShortVersionString: "0.2.44"
+        CFBundleVersion: "27"
         # A4 (2026-08-07): registers the gemmavoice:// scheme so the Live
         # Activity's widgetURL (gemmavoice://open) actually opens the app —
         # handled by .onOpenURL in GemmaVoiceApp.swift.

@@ -12,6 +12,15 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.44",
+            date: "Aug 7",
+            hints: [
+                "GemmaVoice now has a home-screen widget (small and medium). One tap anywhere on it and you're straight into listening — the same fast path as the Action Button. The medium size also shows whether the voice pipeline is up: a state dot plus Brain / Voice / Ears, refreshed about every 15 minutes and whenever you open the app. If the server can't be reached it just says Offline.",
+                "Dropped replies come back. Twice tonight a reply was lost because the connection died while Gemma was still thinking — now the app remembers the turn it was waiting on, and when you come back (reopen the app, or the connection returns) it fetches the answer from the server and shows it in the conversation. Recovered replies appear as text; the spoken audio for that turn is gone with the old connection.",
+                "Leaving the app mid-turn no longer kills the turn. With a question in flight, the app now asks iOS for extra background time to finish the wait, and the lock screen shows Thinking so you can see it's still working. If iOS suspends it anyway, the recovered-reply fix above catches the answer on your return.",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.43",
             date: "Aug 7",
             hints: [

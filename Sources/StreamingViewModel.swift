@@ -46,8 +46,10 @@ final class StreamingViewModel: ObservableObject {
     /// Streaming server WebSocket. Computed so it always carries the currently
     /// selected agent — the server reads `?agent=` and routes this session's
     /// turns to Gemma (desk tmux), Jarvis (Excalibur) or Kai (KPC).
+    /// 0.2.44: `env=` tells the server whether this client is a simulator or a
+    /// real device (same field the beacon and /text_turn now carry).
     private var endpoint: URL {
-        URL(string: "ws://100.80.225.86:9201?agent=\(selectedAgentID)")!
+        URL(string: "ws://\(GemmaVoiceServer.host):9201?agent=\(selectedAgentID)&env=\(GemmaVoiceServer.environment)")!
     }
     private let maxTurns = 20
     /// User tapped mute. Stays true until they tap unmute, regardless of
@@ -336,6 +338,11 @@ final class StreamingViewModel: ObservableObject {
                     speakerHint: "sherman",
                     sessionId: sid,
                     wavBase64: nil,
+                    // Typed turns don't participate in redelivery (a failed
+                    // send is visible right there in the ledger; retype to
+                    // retry) — and must not overwrite a VOICE turn's pending
+                    // record, so no PendingTurnStore here.
+                    onTurnId: { _ in },
                     onAudioChunk: { sink.append($0) }
                 )
                 var reply = result.replyText
@@ -555,6 +562,11 @@ final class StreamingViewModel: ObservableObject {
     func handleScenePhase(_ phase: ScenePhase) {
         switch phase {
         case .active:
+            // 0.2.44: back in the foreground — the keepalive task has done its
+            // job (iOS won't suspend a foreground app), and if a turn's reply
+            // was lost while we were away, fetch it now.
+            endKeepalive()
+            recoverPendingTurnIfNeeded(trigger: "foreground")
             // 0.2.43: a pending Action-Button / Siri / gemmavoice://talk
             // activation overrides a sticky mute — the user explicitly asked
             // to talk, so clear mute and listen. Otherwise the normal resume.
@@ -564,12 +576,146 @@ final class StreamingViewModel: ObservableObject {
                 requestMicPermission()
             }
         case .background, .inactive:
+            // 0.2.44 in-flight keepalive: leaving the foreground with a turn
+            // still awaiting the brain — ask iOS for extended runtime so the
+            // 25-160s wait can finish, and make the wait visible on the lock
+            // screen. Only for a live conversation: a muted/torn-down session
+            // has its request cancelled below anyway, and redelivery (not a
+            // background task) is the recovery for that.
+            if conversationActive && turnAwaitingReply {
+                beginKeepalive()
+            }
             if !conversationActive {
                 teardownAudio()
             }
         @unknown default:
             break
         }
+    }
+
+    // MARK: - In-flight keepalive + reconnect-redelivery (0.2.44)
+    //
+    // The dropped-reply fix, as a PAIR:
+    //  (1) beginBackgroundTask buys the in-flight /text_turn extra background
+    //      runtime when the app resigns active mid-turn, and the Live Activity
+    //      shows "Thinking" on the lock screen so the wait is visible.
+    //  (2) If iOS suspends us anyway (the task expires — we do NOT fight it),
+    //      the server still stores the reply keyed by X-Turn-Id for 10 min;
+    //      PendingTurnStore has persisted that id, and the recovery poll below
+    //      fetches GET /reply_text and renders the transcript on return.
+    //
+    // Recovery trigger points (all funnel into recoverPendingTurnIfNeeded):
+    //  - scenePhase → .active   (foreground after suspension OR a fresh
+    //                            launch after a jetsam kill — the store is in
+    //                            UserDefaults, so it survives both)
+    //  - .connectionOpened      (WS reconnected after a socket death)
+    //  - .sessionError          (the in-flight request itself died — the
+    //                            transport failed but the brain may well have
+    //                            answered into the server-side store)
+
+    /// Background-task handle for the in-flight turn. .invalid = none active.
+    private var keepaliveTaskID: UIBackgroundTaskIdentifier = .invalid
+    /// The active redelivery poll, if any — one at a time.
+    private var redeliveryTask: Task<Void, Never>?
+
+    /// A turn is dispatched and its reply hasn't rendered yet.
+    private var turnAwaitingReply: Bool {
+        status == .thinking || status == .heardYou || PendingTurnStore.pending() != nil
+    }
+
+    private func beginKeepalive() {
+        guard keepaliveTaskID == .invalid else { return }
+        keepaliveTaskID = UIApplication.shared.beginBackgroundTask(withName: "gemmavoice.turn-in-flight") { [weak self] in
+            // Expiry: end the task and let iOS suspend us — redelivery is the
+            // designed recovery, not a fight over background runtime.
+            Task { @MainActor in self?.endKeepalive() }
+        }
+        // Lock-screen visibility: "Gemma — Thinking" while the brain works.
+        if !liveActivityStarted {
+            LiveActivityController.shared.start(agentName: currentAgentName, initialStatus: .thinking)
+            liveActivityStarted = true
+        } else {
+            LiveActivityController.shared.update(to: .thinking)
+        }
+    }
+
+    private func endKeepalive() {
+        guard keepaliveTaskID != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(keepaliveTaskID)
+        keepaliveTaskID = .invalid
+    }
+
+    /// If a persisted in-flight turn exists (and has its server turn id),
+    /// poll GET /reply_text for its reply and render it. Safe to call from
+    /// every trigger point: no-ops when there's nothing pending, when a poll
+    /// is already running, and it re-checks the store before rendering so the
+    /// normal delivery path winning the race cancels it cleanly.
+    func recoverPendingTurnIfNeeded(trigger: String) {
+        guard redeliveryTask == nil else { return }
+        guard let pending = PendingTurnStore.pending() else { return }
+        guard let rid = pending.rid else {
+            // Transport died before response headers — there is no fetch key.
+            // (Closing this gap needs a client-supplied turn id server-side.)
+            return
+        }
+        NSLog("[GemmaVoice] redelivery: pending turn rid=\(rid) (trigger: \(trigger))")
+        let client = TextTurnClient()   // /reply_text is agent-agnostic
+        redeliveryTask = Task { @MainActor [weak self] in
+            defer { self?.redeliveryTask = nil }
+            while !Task.isCancelled {
+                guard let self else { return }
+                // Resolved through the normal path (or user deleted it)?
+                guard let current = PendingTurnStore.pending(), current.rid == rid else { return }
+                // Never race a request that's still alive — its own completion
+                // clears the store; we only step in once it's gone.
+                if self.onDeviceSession?.hasInFlightTurn == true {
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                    continue
+                }
+                if let reply = try? await client.fetchReplyText(rid: rid), !reply.isEmpty {
+                    // Re-check: the store is the single arbiter against
+                    // double-render (main-actor serialized).
+                    guard PendingTurnStore.pending()?.rid == rid else { return }
+                    PendingTurnStore.clear()
+                    NSLog("[GemmaVoice] redelivery: recovered reply for rid=\(rid)")
+                    self.renderRedeliveredReply(reply, forUserText: current.text)
+                    return
+                }
+                // {"reply": null} — brain still working, or the rid aged out.
+                // Server turn timeout is 170s; poll within a bounded window.
+                if Date().timeIntervalSince(current.startedAt) > 210 {
+                    PendingTurnStore.clear()
+                    NSLog("[GemmaVoice] redelivery: gave up on rid=\(rid) (turn window elapsed)")
+                    return
+                }
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+            }
+        }
+    }
+
+    /// Render a recovered reply: transcript line + ledger card. If the turn's
+    /// card is still open (app survived in memory), complete it in place;
+    /// after a relaunch, synthesize the full card. Rendering only — no audio:
+    /// the reply's TTS died with the original transport and the server has no
+    /// speak-this-text endpoint, so redelivered turns are text-only by design
+    /// (and a backgrounded app must not start playback anyway).
+    private func renderRedeliveredReply(_ reply: String, forUserText userText: String) {
+        appendTurn(text: reply, isGemma: true, source: "gemma", speaker: nil)
+        if let i = latestPendingIndex, ledger[i].youText == userText {
+            ledger[i].reply = reply
+            ledger[i].source = "gemma"
+            ledger[i].phase = .answered
+            ledger[i].answeredAt = Date()
+        } else {
+            ledger.append(LedgerTurn(youText: userText, speaker: "sherman", reply: reply,
+                                     source: "gemma", rid: nil, phase: .answered,
+                                     startedAt: nil, answeredAt: Date()))
+            if ledger.count > maxLedger { ledger.removeFirst(ledger.count - maxLedger) }
+        }
+        if status == .thinking || status == .heardYou {
+            status = userMuted ? .muted : .listening
+        }
+        endKeepalive()
     }
 
     /// 0.2.43: Action-Button / Siri / gemmavoice://talk fast path — force an
@@ -649,6 +795,7 @@ final class StreamingViewModel: ObservableObject {
             }
         case .ttsEnd:
             ledgerAnswered()
+            endKeepalive()   // 0.2.44: turn resolved — release background runtime
             if userMuted {
                 status = .muted
             } else if status == .playing || status == .thinking {
@@ -656,6 +803,7 @@ final class StreamingViewModel: ObservableObject {
             }
         case .dropped(let reason):
             ledgerDropped(reason)
+            endKeepalive()
             if userMuted {
                 status = .muted
             } else if status == .thinking {
@@ -665,6 +813,10 @@ final class StreamingViewModel: ObservableObject {
         case .sessionError(let err):
             errorMessage = err.localizedDescription
             status = .listening
+            // 0.2.44: the request transport died. If the turn's id was already
+            // persisted, the brain's reply is (or will be) in the server-side
+            // store — fetch it instead of losing the turn.
+            recoverPendingTurnIfNeeded(trigger: "turn-error")
         }
     }
 
@@ -721,6 +873,7 @@ final class StreamingViewModel: ObservableObject {
             if !userMuted { status = .playing }
         case .ttsEnd:
             ledgerAnswered()
+            endKeepalive()   // 0.2.44: turn resolved — release background runtime
             if userMuted {
                 status = .muted
             } else if status == .playing || status == .thinking || status == .heardYou {
@@ -738,6 +891,7 @@ final class StreamingViewModel: ObservableObject {
                 transcript.remove(at: idx)
             }
             ledgerDropped(reason)
+            endKeepalive()
             if userMuted {
                 status = .muted
             } else if status == .thinking || status == .heardYou {
@@ -760,6 +914,10 @@ final class StreamingViewModel: ObservableObject {
             // live, so it's honest to show listening again (unless muted).
             errorMessage = nil
             if !userMuted && status == .disconnected { status = .listening }
+            // 0.2.44: the socket may have died with a turn in flight — if a
+            // pending record exists (HTTP-path turns carry the fetchable id;
+            // WS turns will once the server echoes a rid), recover its reply.
+            recoverPendingTurnIfNeeded(trigger: "ws-reconnect")
         case .agent(let name):
             // Server is announcing which agent the voice channel is bound to.
             currentAgentName = name

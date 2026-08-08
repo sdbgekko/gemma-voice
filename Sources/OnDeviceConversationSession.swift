@@ -193,6 +193,10 @@ final class OnDeviceConversationSession: NSObject {
     /// The in-flight /text_turn request for the open turn. Cancelled and
     /// superseded when a continuation merges new speech into the same turn.
     private var inFlightTurnTask: Task<Void, Never>?
+    /// 0.2.44 redelivery: the view model's recovery poll must not race a
+    /// request that is still alive and may deliver normally — it waits while
+    /// this is true (the request's own completion clears PendingTurnStore).
+    var hasInFlightTurn: Bool { inFlightTurnTask != nil }
     /// Fires continuationGraceWindow after a send; closes the window if no
     /// resume and no reply-audio arrived (falls back to half-duplex).
     private var graceTimerTask: Task<Void, Never>?
@@ -457,6 +461,9 @@ final class OnDeviceConversationSession: NSObject {
     /// cancelled. A cancelled inFlightTurnTask makes performRequest bail before
     /// emitting transcriptGemma/ttsEnd, so no late events touch the ledger.
     func cancelInFlightTurn() {
+        // User explicitly killed this turn — it must never come back via
+        // redelivery either.
+        PendingTurnStore.clear()
         inFlightTurnTask?.cancel(); inFlightTurnTask = nil
         lateReplyTask?.cancel(); lateReplyTask = nil
         graceTimerTask?.cancel(); graceTimerTask = nil
@@ -837,12 +844,21 @@ final class OnDeviceConversationSession: NSObject {
         // Build the speaker-verification WAV from the open turn's audio at
         // send time — a merged re-send therefore carries both fragments.
         let wavBase64 = Self.speakerClipBase64(fromPCM: pendingTurnAudio)
+        // 0.2.44 redelivery: durable record of the in-flight turn. Overwritten
+        // by a continuation merge (same logical turn), upgraded with the
+        // server's X-Turn-Id when headers arrive, cleared on resolution below.
+        PendingTurnStore.begin(text: text)
         do {
             let result = try await textTurnClient.postText(
                 text,
                 speakerHint: "sherman",
                 sessionId: sessionId,
                 wavBase64: wavBase64,
+                onTurnId: { rid in
+                    // URLSession delivers this off-main; the store is
+                    // UserDefaults-backed and thread-safe.
+                    PendingTurnStore.assignRid(rid)
+                },
                 onAudioChunk: { [weak self] chunk in
                     guard let self = self else { return }
                     // First reply audio = she's answering. Go half-duplex
@@ -857,6 +873,9 @@ final class OnDeviceConversationSession: NSObject {
                 }
             )
             if Task.isCancelled { return }
+            // Turn completed over its own transport — nothing to redeliver.
+            // (Streaming path: fetchLateReply below still backfills the text.)
+            PendingTurnStore.clear()
             if !result.replyText.isEmpty {
                 // Classic path: the reply came back in the X-Reply-Text header.
                 // Show it immediately, exactly as before. `brain` carries the
@@ -879,10 +898,23 @@ final class OnDeviceConversationSession: NSObject {
                 finishTurn()
             }
         } catch is CancellationError {
+            // Cancelled by a merge (re-send owns the record) or a teardown
+            // (the reply may still land server-side — KEEP the record so the
+            // foreground redelivery check can fetch it). Swipe-delete clears
+            // explicitly in cancelInFlightTurn.
             return
         } catch {
             let ns = error as NSError
             if Task.isCancelled || ns.code == NSURLErrorCancelled { return }
+            // 0.2.44 redelivery: a transport-class death (connection lost,
+            // timeout, app suspended mid-request) is exactly the case the
+            // server-side reply store covers — KEEP the pending record; the
+            // view model's recovery path fetches GET /reply_text with it.
+            // Anything else (auth, 4xx/5xx, passphrase) is a real turn
+            // failure: clear so stale records can't ghost-redeliver later.
+            if ns.domain != NSURLErrorDomain {
+                PendingTurnStore.clear()
+            }
             // A real failure ends the turn: release the gate, surface it.
             finishTurn()
             if let kw = ns.userInfo["matchedKeyword"] as? String {
@@ -1186,6 +1218,7 @@ protocol TextTurnClientProtocol {
         speakerHint: String,
         sessionId: String,
         wavBase64: String?,
+        onTurnId: @escaping (String) -> Void,
         onAudioChunk: @escaping (Data) -> Void
     ) async throws -> TextTurnResult
 
@@ -1215,6 +1248,7 @@ struct StubTextTurnClient: TextTurnClientProtocol {
                   speakerHint: String,
                   sessionId: String,
                   wavBase64: String?,
+                  onTurnId: @escaping (String) -> Void,
                   onAudioChunk: @escaping (Data) -> Void) async throws -> TextTurnResult {
         throw NSError(
             domain: "OnDeviceConversation",

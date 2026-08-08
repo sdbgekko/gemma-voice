@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import WidgetKit
 
 @main
 struct GemmaVoiceApp: App {
@@ -61,6 +62,12 @@ struct GemmaVoiceApp: App {
                 .onChange(of: scenePhase) { _, newPhase in
                     LifecycleBeacon.notePhase(newPhase)
                     viewModel.handleScenePhase(newPhase)
+                    // 0.2.44: refresh the home-screen widget's pipeline state
+                    // whenever the app comes to the foreground — the 15-min
+                    // timeline policy covers the rest of the day.
+                    if newPhase == .active {
+                        WidgetCenter.shared.reloadTimelines(ofKind: GemmaWidgetKind.home)
+                    }
                 }
                 // A4 (2026-08-07 roundtable): the Live Activity's widgetURL
                 // (gemmavoice://open, GemmaVoiceLiveActivity.swift) was dead —
@@ -92,9 +99,9 @@ struct GemmaVoiceApp: App {
 /// willTerminate fires. On the next launch, false means the prior run ended
 /// WITHOUT a terminate callback — jetsam, crash, or a suspended swipe-kill —
 /// and we POST that to the voice-turn server so memory kills stop being
-/// invisible. Fire-and-forget with silent failure. NOTE: the server has no
-/// /beacon endpoint yet (stream_server.py TODO) — until it lands this 404s
-/// harmlessly.
+/// invisible. Fire-and-forget with silent failure. The server's /beacon
+/// endpoint (stream_server.py http_beacon) logs each report and appends it
+/// to beacons.jsonl; since 0.2.44 the payload also carries `environment`.
 enum LifecycleBeacon {
     private static let cleanExitKey = "beacon.lastRunEndedClean"
     private static let lastPhaseKey = "beacon.lastKnownScenePhase"
@@ -136,6 +143,10 @@ enum LifecycleBeacon {
             "last_known_phase": lastPhase,
             "app_version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?",
             "build": Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?",
+            // 0.2.44: "simulator"/"device" — server-side handling landed with
+            // tonight's stream_server.py beacon work; keeps sim smoke-test
+            // launches out of the device jetsam rollups.
+            "environment": GemmaVoiceServer.environment,
         ]
         req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
         URLSession.shared.dataTask(with: req) { _, _, _ in }.resume()   // silent
