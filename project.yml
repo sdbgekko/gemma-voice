@@ -22,7 +22,7 @@ targets:
       path: WidgetResources/Info.plist
       properties:
         CFBundleDisplayName: GemmaVoice Widgets
-        CFBundleShortVersionString: "0.2.41"
+        CFBundleShortVersionString: "0.2.42"
         CFBundleVersion: "26"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
@@ -47,7 +47,7 @@ targets:
       path: WatchResources/Info.plist
       properties:
         CFBundleDisplayName: GemmaVoice
-        CFBundleShortVersionString: "0.2.41"
+        CFBundleShortVersionString: "0.2.42"
         CFBundleVersion: "26"
         WKApplication: true
         WKCompanionAppBundleIdentifier: com.shermanbrown.gemmavoice
@@ -74,8 +74,15 @@ targets:
       path: Resources/Info.plist
       properties:
         CFBundleDisplayName: GemmaVoice
-        CFBundleShortVersionString: "0.2.41"
+        CFBundleShortVersionString: "0.2.42"
         CFBundleVersion: "26"
+        # A4 (2026-08-07): registers the gemmavoice:// scheme so the Live
+        # Activity's widgetURL (gemmavoice://open) actually opens the app —
+        # handled by .onOpenURL in GemmaVoiceApp.swift.
+        CFBundleURLTypes:
+          - CFBundleURLName: com.shermanbrown.gemmavoice
+            CFBundleURLSchemes:
+              - gemmavoice
         ITSAppUsesNonExemptEncryption: false
         NSSupportsLiveActivities: true
         UILaunchScreen:

@@ -64,10 +64,13 @@ final class TextTurnClient: TextTurnClientProtocol {
         } else {
             let cfg = URLSessionConfiguration.default
             // No request timeout — the body streams; resource timeout caps total
-            // turn latency at a generous 90s so a stuck Kokoro doesn't hang us
-            // forever.
-            cfg.timeoutIntervalForRequest = 90
-            cfg.timeoutIntervalForResource = 90
+            // turn latency so a stuck Kokoro doesn't hang us forever. 175s:
+            // the server's own turn timeout is 170s (stream_server.py
+            // TURN_TIMEOUT_S, 2026-08-07) — the client must outlive it so the
+            // server always gets to answer (or fall back to Jarvis) before we
+            // give up. Was 90s, which expired mid-turn on a busy brain.
+            cfg.timeoutIntervalForRequest = 175
+            cfg.timeoutIntervalForResource = 175
             self.session = URLSession(configuration: cfg)
         }
     }
@@ -169,6 +172,11 @@ final class TextTurnClient: TextTurnClientProtocol {
         // (streaming and classic). Used to fetch the reply text after the
         // audio finishes when X-Reply-Text was absent.
         let turnId = (http.value(forHTTPHeaderField: "X-Turn-Id") ?? "").trimmingCharacters(in: .whitespaces)
+        // X-Brain (2026-08-07): the brain that ACTUALLY answered ("gemma" |
+        // "jarvis" | "kai"). On a busy-fallback turn this differs from the
+        // requested agent — the UI badges the reply with the real source so
+        // Jarvis never silently wears Gemma's label.
+        let brain = (http.value(forHTTPHeaderField: "X-Brain") ?? "").trimmingCharacters(in: .whitespaces)
 
         // Stream PCM bytes to caller in ~32ms-equivalent chunks. Kokoro
         // emits 24kHz int16 mono = 48000 bytes/sec, so a 1024-byte chunk
@@ -191,7 +199,9 @@ final class TextTurnClient: TextTurnClientProtocol {
             if n > 0 { onAudioChunk(pending.prefix(n)) }
         }
 
-        return TextTurnResult(replyText: replyText, rid: turnId.isEmpty ? nil : turnId)
+        return TextTurnResult(replyText: replyText,
+                              rid: turnId.isEmpty ? nil : turnId,
+                              brain: brain.isEmpty ? nil : brain.lowercased())
     }
 
     /// Fetch the full reply text for a completed turn from the server's

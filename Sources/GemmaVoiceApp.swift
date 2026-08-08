@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 @main
 struct GemmaVoiceApp: App {
@@ -37,6 +38,11 @@ struct GemmaVoiceApp: App {
         // speaker toggle moves the output volume NOW (even mid-utterance), never
         // gates the next turn. See SpeakerSelfTest.swift.
         runSpeakerToggleCutsOutputLiveSelfTest()
+
+        // A2 (2026-08-07 roundtable, seat 17): lifecycle beacon — report how
+        // the PRIOR run ended so jetsam kills are self-reporting instead of a
+        // black box. Fire-and-forget; silent on failure.
+        LifecycleBeacon.fireLaunchBeacon()
     }
 
     var body: some Scene {
@@ -53,8 +59,89 @@ struct GemmaVoiceApp: App {
                 // flight) is deliberately KEPT alive across backgrounding so
                 // the hands-free / locked-screen / car use still works.
                 .onChange(of: scenePhase) { _, newPhase in
+                    LifecycleBeacon.notePhase(newPhase)
                     viewModel.handleScenePhase(newPhase)
                 }
+                // A4 (2026-08-07 roundtable): the Live Activity's widgetURL
+                // (gemmavoice://open, GemmaVoiceLiveActivity.swift) was dead —
+                // no CFBundleURLTypes (now in project.yml) and no handler. The
+                // app is single-screen, so "route to the conversation view" =
+                // come to the foreground and make sure we're listening.
+                // Foreground-only is fine here per
+                // feedback_ios_url_scheme_foreground_only.
+                .onOpenURL { url in
+                    guard url.scheme == "gemmavoice" else { return }
+                    viewModel.handleScenePhase(.active)
+                }
         }
+    }
+}
+
+/// A2 (2026-08-07 roundtable, seat 17): app-side jetsam visibility. iOS offers
+/// no simple "why was I killed" API, so we keep a clean-exit breadcrumb in
+/// UserDefaults: pessimistically false at launch, set true only when
+/// willTerminate fires. On the next launch, false means the prior run ended
+/// WITHOUT a terminate callback — jetsam, crash, or a suspended swipe-kill —
+/// and we POST that to the voice-turn server so memory kills stop being
+/// invisible. Fire-and-forget with silent failure. NOTE: the server has no
+/// /beacon endpoint yet (stream_server.py TODO) — until it lands this 404s
+/// harmlessly.
+enum LifecycleBeacon {
+    private static let cleanExitKey = "beacon.lastRunEndedClean"
+    private static let lastPhaseKey = "beacon.lastKnownScenePhase"
+    private static let hasRunKey = "beacon.hasRunBefore"
+    /// Retained so the willTerminate observer lives for the process lifetime.
+    private static var terminateObserver: NSObjectProtocol?
+
+    static func fireLaunchBeacon() {
+        let defaults = UserDefaults.standard
+        let firstLaunch = !defaults.bool(forKey: hasRunKey)
+        let endedClean = defaults.bool(forKey: cleanExitKey)
+        let lastPhase = defaults.string(forKey: lastPhaseKey) ?? "unknown"
+        let reason: String
+        if firstLaunch {
+            reason = "first_launch"
+        } else if endedClean {
+            reason = "clean_exit"
+        } else {
+            // No terminate callback last run — jetsam / crash / suspended kill.
+            reason = "unclean_exit_possible_jetsam"
+        }
+        defaults.set(true, forKey: hasRunKey)
+        defaults.set(false, forKey: cleanExitKey)   // pessimistic until willTerminate
+
+        // willTerminate fires on foreground quits; a jetsam or suspended
+        // swipe-kill never reaches it — which is exactly the signal we want.
+        terminateObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willTerminateNotification, object: nil, queue: .main
+        ) { _ in
+            UserDefaults.standard.set(true, forKey: cleanExitKey)
+        }
+
+        var req = URLRequest(url: TextTurnClient.defaultBase.appendingPathComponent("beacon"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.timeoutInterval = 10
+        let payload: [String: String] = [
+            "prior_termination_reason": reason,
+            "last_known_phase": lastPhase,
+            "app_version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?",
+            "build": Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?",
+        ]
+        req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
+        URLSession.shared.dataTask(with: req) { _, _, _ in }.resume()   // silent
+    }
+
+    /// Breadcrumb: the phase the app was last seen in, giving the beacon's
+    /// unclean-exit reports context (jetsam almost always hits in background).
+    static func notePhase(_ phase: ScenePhase) {
+        let name: String
+        switch phase {
+        case .active: name = "active"
+        case .inactive: name = "inactive"
+        case .background: name = "background"
+        @unknown default: name = "unknown"
+        }
+        UserDefaults.standard.set(name, forKey: lastPhaseKey)
     }
 }

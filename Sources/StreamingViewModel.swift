@@ -194,8 +194,21 @@ final class StreamingViewModel: ObservableObject {
             // Re-acquire the mic on the still-alive session — no rebuild.
             userMuted = false
             micSessions.forEach { action.applySessionEffect(to: $0) }
-            isCapturing = true
-            status = .listening
+            // A2 (2026-08-07 roundtable): a FAILED unmute must not show
+            // "listening" over a dead mic. The sessions report whether the mic
+            // actually re-armed; if not, stay honestly muted so the next tap
+            // retries.
+            let micOK = (session?.micReacquired ?? true)
+                && (onDeviceSession?.micReacquired ?? true)
+            if micOK {
+                isCapturing = true
+                status = .listening
+            } else {
+                userMuted = true
+                isCapturing = false
+                status = .muted
+                errorMessage = "Couldn't re-open the microphone — tap unmute to retry."
+            }
         case .unmuteColdStart:
             // Session was fully torn down while muted (e.g. backgrounded) —
             // rebuild a fresh capture session.
@@ -322,8 +335,12 @@ final class StreamingViewModel: ObservableObject {
                     }
                 }
                 if !reply.isEmpty {
-                    self.appendTurn(text: reply, isGemma: true, source: agent, speaker: nil)
-                    self.ledgerSetReply(reply, source: agent)
+                    // Badge the brain that ACTUALLY answered (X-Brain header,
+                    // 2026-08-07) — on a busy-fallback turn that's "jarvis",
+                    // not the requested agent, and the card must say so.
+                    let source = result.brain ?? agent
+                    self.appendTurn(text: reply, isGemma: true, source: source, speaker: nil)
+                    self.ledgerSetReply(reply, source: source)
                 }
                 self.ledgerAnswered()
                 // Best-effort voice: only when the speaker is on and audio came back.
@@ -575,10 +592,14 @@ final class StreamingViewModel: ObservableObject {
                 appendTurn(text: text, isGemma: false, source: "on-device", speaker: "sherman")
                 ledgerFillYou(text, speaker: "sherman")
             }
-        case .transcriptGemma(let text):
+        case .transcriptGemma(let text, let brain):
             if !text.isEmpty {
-                appendTurn(text: text, isGemma: true, source: "gemma", speaker: nil)
-                ledgerSetReply(text, source: "gemma")
+                // A2 (2026-08-07): badge the brain that ACTUALLY answered
+                // (server X-Brain header) instead of hardcoding "gemma" — a
+                // busy-fallback Jarvis turn now shows the Jarvis label.
+                let source = brain ?? "gemma"
+                appendTurn(text: text, isGemma: true, source: source, speaker: nil)
+                ledgerSetReply(text, source: source)
             }
             if !userMuted { status = .playing }
         case .replyTextLate(let text):

@@ -29,6 +29,15 @@ final class OnDeviceSTT {
 
     private let recognizer: SFSpeechRecognizer?
 
+    /// Domain vocabulary fed to every recognition request (2026-08-07
+    /// roundtable A3 — "zero contextualStrings" was the highest-leverage STT
+    /// fix). Apple's on-device model has never heard "Sekushi" or "Kavika";
+    /// contextualStrings biases recognition toward these exact spellings.
+    static let contextualStrings: [String] = [
+        "Sekushi", "Kokoro", "Merlin", "Kai", "Jarvis", "AlohaVoice",
+        "Sophie", "SCG", "Gemma", "Malia", "Bellavino", "Oahu", "ohana",
+    ]
+
     // Live recording state — used by the Settings test button (B1 verification ship).
     private var liveEngine: AVAudioEngine?
     private var liveRequest: SFSpeechAudioBufferRecognitionRequest?
@@ -36,6 +45,11 @@ final class OnDeviceSTT {
 
     // Push-based streaming state (conversation flow) — see startStreaming. Owns
     // NO engine/session; the conversation session feeds it from its own mic tap.
+    // streamLock guards streamRequest/streamTask: appendStreaming/endStreaming
+    // are invoked from the conversation session's AUDIO render thread while
+    // start/cancel run on the main actor — unguarded, that's a real data race
+    // (2026-08-07 roundtable A1, render-thread races).
+    private let streamLock = NSLock()
     private var streamRequest: SFSpeechAudioBufferRecognitionRequest?
     private var streamTask: SFSpeechRecognitionTask?
     // Pre-test session snapshot — restored on cleanup so the conversation flow's
@@ -118,6 +132,7 @@ final class OnDeviceSTT {
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.requiresOnDeviceRecognition = true  // no Apple-server round trip
         request.shouldReportPartialResults = false
+        request.contextualStrings = Self.contextualStrings
         request.append(buffer)
         request.endAudio()
 
@@ -177,6 +192,7 @@ final class OnDeviceSTT {
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.requiresOnDeviceRecognition = true
         request.shouldReportPartialResults = true
+        request.contextualStrings = Self.contextualStrings
 
         let inputNode = engine.inputNode
         let format = inputNode.outputFormat(forBus: 0)
@@ -274,10 +290,13 @@ final class OnDeviceSTT {
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.requiresOnDeviceRecognition = true   // no Apple-server round trip
         request.shouldReportPartialResults = true    // stream partials as we feed
+        request.contextualStrings = Self.contextualStrings
+        streamLock.lock()
         self.streamRequest = request
+        streamLock.unlock()
 
         var settled = false
-        self.streamTask = recognizer.recognitionTask(with: request) { result, error in
+        let task = recognizer.recognitionTask(with: request) { result, error in
             if let result {
                 let text = result.bestTranscription.formattedString
                 if result.isFinal {
@@ -294,6 +313,9 @@ final class OnDeviceSTT {
                 onFinal(.failure(.recognitionFailed(error.localizedDescription)))
             }
         }
+        streamLock.lock()
+        self.streamTask = task
+        streamLock.unlock()
         return true
     }
 
@@ -301,21 +323,31 @@ final class OnDeviceSTT {
     /// Called from the conversation session's mic tap; SFSpeechAudioBufferRecognitionRequest
     /// is designed to be appended off the main thread (startLive does the same).
     func appendStreaming(_ buffer: AVAudioPCMBuffer) {
-        streamRequest?.append(buffer)
+        streamLock.lock()
+        let request = streamRequest
+        streamLock.unlock()
+        request?.append(buffer)
     }
 
     /// Close the audio stream. The recognizer drains its buffered audio and fires
     /// the final through onFinal (passed to startStreaming) shortly after.
     func endStreaming() {
-        streamRequest?.endAudio()
+        streamLock.lock()
+        let request = streamRequest
+        streamLock.unlock()
+        request?.endAudio()
     }
 
     /// Abandon the current stream without waiting for a final (teardown / dropped
     /// short utterance). Safe to call when no stream is active.
     func cancelStreaming() {
-        streamTask?.cancel()
-        streamRequest?.endAudio()
-        streamRequest = nil
+        streamLock.lock()
+        let task = streamTask
+        let request = streamRequest
         streamTask = nil
+        streamRequest = nil
+        streamLock.unlock()
+        task?.cancel()
+        request?.endAudio()
     }
 }

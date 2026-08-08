@@ -12,6 +12,19 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.42",
+            date: "Aug 7",
+            hints: [
+                "Fixed the invisible memory leak that was getting the app killed by iOS during long sessions. The mic buffer used to quietly grow forever between your sentences — hours of listening could end in a silent shutdown. It's bounded now, so an all-day session stays up.",
+                "Names come through right in on-device transcription. Sekushi, Kokoro, Merlin, Kai, Jarvis, Malia, Kavika, and the rest of the household vocabulary are now taught to the on-device recognizer and auto-corrected when it still mishears — same fixes the server path has had all along.",
+                "The reply card now names who actually answered. If Gemma was busy and Jarvis stepped in, the card says Jarvis — no one wears Gemma's label anymore.",
+                "Tapping the Live Activity on the lock screen or Dynamic Island now opens the app. That tap was dead before.",
+                "Turns get the time they need. The app used to give up at 90 seconds while the brain was still working; it now waits out the server's full window, so slow turns finish instead of erroring.",
+                "Phone calls, Siri, and Bluetooth switches no longer silently kill the mic on the default path — the session now rebuilds itself the way the streaming path always did.",
+                "If unmuting fails, the app says so instead of showing \"listening\" over a dead mic.",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.41",
             date: "Jul 31",
             hints: [

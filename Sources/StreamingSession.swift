@@ -28,8 +28,17 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
     private let playerNode = AVAudioPlayerNode()
     private var webSocket: URLSessionWebSocketTask?
     private var urlSession: URLSession!
+    /// True after stop() invalidated urlSession (A1: URLSession retains its
+    /// delegate — self — so every un-invalidated session leaked this whole
+    /// object, engine + observers included, on stopCapture()/selectAgent()).
+    /// start() rebuilds the session if a restart ever follows a stop.
+    private var urlSessionInvalidated = false
     private var isRunning = false
     private var isMuted = false
+    /// True when the last unmuteMic() actually re-acquired the mic. The view
+    /// model checks this after an unmute so a FAILED unmute can never show
+    /// "listening" over a dead mic (2026-08-07 roundtable A2).
+    private(set) var micReacquired = true
     private let targetFormat: AVAudioFormat    // 16kHz mono float32 — mic upload
     private let ttsFormat: AVAudioFormat       // 24kHz mono float32 — Kokoro PCM playback
     private var converter: AVAudioConverter?
@@ -277,11 +286,21 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
         }
 
         // Output graph: player node -> main mixer -> output.
-        // Connect at the mixer's actual output format (driven by hardware /
+        // Connect at the engine's actual output format (driven by hardware /
         // session mode), not the Kokoro 24kHz source format. scheduleTTSChunk
         // resamples each chunk before scheduling.
+        // Zero-channel guard ported from the on-device path (A1, 2026-08-07):
+        // mainMixerNode.outputFormat(forBus:0) can return a 0-channel format on
+        // a freshly-activated audio session before the output graph exists, and
+        // engine.connect then throws an uncatchable NSInvalidArgumentException
+        // ("required condition is false: format.channelCount > 0").
+        // outputNode.inputFormat is what the engine actually sends to hardware;
+        // fall back to a known-good 48kHz stereo if even that is zero-channel.
         engine.attach(playerNode)
-        let connFormat = engine.mainMixerNode.outputFormat(forBus: 0)
+        let candidateFormat = engine.outputNode.inputFormat(forBus: 0)
+        let connFormat: AVAudioFormat = (candidateFormat.channelCount > 0)
+            ? candidateFormat
+            : AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2)!
         engine.connect(playerNode, to: engine.mainMixerNode, format: connFormat)
         self.playerConnectionFormat = connFormat
         self.ttsResampler = AVAudioConverter(from: ttsFormat, to: connFormat)
@@ -299,6 +318,12 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
         // WebSocket + send loop + ping keepalive.
         micArmedAt = CFAbsoluteTimeGetCurrent() + micWarmupGrace
         isRunning = true
+        // stop() invalidates urlSession to break the delegate retain (A1);
+        // rebuild it if this instance is ever restarted after a stop.
+        if urlSessionInvalidated {
+            urlSession = URLSession(configuration: .default, delegate: self, delegateQueue: .main)
+            urlSessionInvalidated = false
+        }
         connectSocket()
     }
 
@@ -314,6 +339,14 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
         playerNode.stop()
         webSocket?.cancel(with: .goingAway, reason: nil)
         webSocket = nil
+        // A1 (2026-08-07 roundtable): URLSession(configuration:delegate:)
+        // RETAINS its delegate (self). Without invalidation, every
+        // stopCapture()/selectAgent() leaked this entire session object —
+        // AVAudioEngine + the 4 notification observers included (the view
+        // model nils its reference, but the URLSession kept us alive).
+        // invalidateAndCancel breaks the retain so deinit can run.
+        urlSession.invalidateAndCancel()
+        urlSessionInvalidated = true
         try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
     }
 
@@ -374,9 +407,12 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
     /// Unmute: re-acquire the mic on the still-open session — restore the
     /// record+playback category, tell the server to resume its VAD, and
     /// rebuild the mic tap. No socket/engine rebuild.
+    /// A2 (2026-08-07): a FAILED re-acquire keeps isMuted asserted and reports
+    /// micReacquired=false so the UI never shows "listening" over a dead mic.
     @MainActor
     func unmuteMic() {
         guard isRunning else { return }
+        var ok = true
         let session = AVAudioSession.sharedInstance()
         do {
             try session.setCategory(.playAndRecord, mode: .spokenAudio,
@@ -387,10 +423,21 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
             }
         } catch {
             NSLog("[GemmaVoice] unmuteMic category restore failed: \(error)")
+            ok = false
         }
-        isMuted = false
-        sendControl(["type": "unmute"])
-        rebuildMicTap()   // reinstall tap, fresh converter, re-arm warmup gate
+        if ok {
+            isMuted = false
+            sendControl(["type": "unmute"])
+            rebuildMicTap()   // reinstall tap, fresh converter, re-arm warmup gate
+            if !engine.isRunning {
+                // rebuildMicTap couldn't restart the engine — the mic is NOT hot.
+                NSLog("[GemmaVoice] unmuteMic: engine failed to restart — staying muted")
+                engine.inputNode.removeTap(onBus: 0)
+                ok = false
+            }
+        }
+        if !ok { isMuted = true }   // failed unmute stays honestly muted
+        micReacquired = ok
     }
 
     func forceCut() {
@@ -561,10 +608,27 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
     // MARK: - Connection lifecycle (P0-1)
 
     /// Open a fresh WebSocket, start the receive loop + ping keepalive.
+    /// A2 (2026-08-07 roundtable): the handshake now carries the same
+    /// HMAC-SHA256 shared secret as /text_turn (TextTurnClient scheme) — the
+    /// :9201 socket carries LIVE MIC AUDIO and can inject turns into
+    /// desk-Gemma, yet was the one transport with no auth. Signed material is
+    /// "ws-connect:<unix-ts>"; the timestamp rides in X-Voice-TS so the server
+    /// can verify and replay-window it. NOTE: stream_server.py does NOT yet
+    /// validate these headers on the audio WS (handle_client has no auth
+    /// check) — server-side enforcement is a TODO; sending now means deployed
+    /// clients are already compliant the day it flips on.
     private func connectSocket() {
         guard isRunning else { return }
         webSocket?.cancel(with: .goingAway, reason: nil)
-        let task = urlSession.webSocketTask(with: url)
+        var request = URLRequest(url: url)
+        if let secret = VoiceAuthSecret.read() {
+            let ts = String(Int(Date().timeIntervalSince1970))
+            let mac = TextTurnClient.hmacSHA256Hex(secret: secret,
+                                                   bodyBytes: Data("ws-connect:\(ts)".utf8))
+            request.setValue(ts, forHTTPHeaderField: "X-Voice-TS")
+            request.setValue(mac, forHTTPHeaderField: "X-Voice-Auth")
+        }
+        let task = urlSession.webSocketTask(with: request)
         webSocket = task
         task.resume()
         lastPongAt = CFAbsoluteTimeGetCurrent()

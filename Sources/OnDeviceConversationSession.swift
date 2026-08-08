@@ -37,7 +37,11 @@ final class OnDeviceConversationSession: NSObject {
         /// Combined transcript of a merged turn ("…first part …continued part").
         /// The ledger card grows in place rather than a second card appearing.
         case transcriptContinued(String)
-        case transcriptGemma(String)
+        /// Reply text plus the brain that ACTUALLY answered (server X-Brain
+        /// header: "gemma" | "jarvis" | "kai"; nil on older servers). A
+        /// busy-fallback turn arrives with brain == "jarvis" so the UI can
+        /// badge it honestly instead of hardcoding "gemma".
+        case transcriptGemma(String, brain: String?)
         /// Streaming path only (0.2.32): the reply text arrived AFTER the audio
         /// (fetched via /reply_text once ttsEnd already closed the turn). The
         /// UI backfills the already-answered card's Gemma text with this.
@@ -55,7 +59,12 @@ final class OnDeviceConversationSession: NSObject {
     private let playerNode = AVAudioPlayerNode()
     private let captureFormat: AVAudioFormat   // 16kHz mono float32 — for OnDeviceSTT
     private let ttsFormat: AVAudioFormat       // 24kHz mono float32 — Kokoro PCM playback
-    private var converter: AVAudioConverter?
+    /// Written on main (start/unmute/route-rebuild), read on the render
+    /// thread — stateLock-guarded, see the cross-thread block above.
+    private var converter: AVAudioConverter? {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _converter }
+        set { stateLock.lock(); _converter = newValue; stateLock.unlock() }
+    }
     /// Resamples 24kHz Kokoro PCM to playerNode's connection format. Same
     /// mechanism as StreamingSession — required to keep TTS audible under
     /// .voiceChat session mode (which forces hw to 16kHz).
@@ -65,6 +74,29 @@ final class OnDeviceConversationSession: NSObject {
     // VAD / utterance buffering
     private var pcmAccumulator: [Float] = []   // current utterance (16kHz f32)
     private let accumulatorLock = NSLock()
+    /// Jetsam bounds (2026-08-07 roundtable A1). Before these, pcmAccumulator
+    /// appended every mic frame (64 KB/s) and cleared ONLY at an utterance cut
+    /// — ambient silence accumulated ~230 MB/hr, including while backgrounded
+    /// (UIBackgroundModes=audio), which is exactly the 0.2.31/0.2.32 jetsam
+    /// kill pattern. Outside speech we keep only a short pre-roll tail (the
+    /// utterance lead-in); a 60s hard cap with drop-oldest is the last-resort
+    /// guard so NO path can grow the buffer unbounded.
+    private let preRollKeepSamples = 10 * 512      // ~320ms lead-in kept while idle
+    private let hardCapSamples = 60 * 16_000       // 60s of 16kHz audio, absolute
+
+    // Cross-thread mic-path state (2026-08-07 roundtable A1, render-thread
+    // races). These are written on the main actor but read (and in one case
+    // written) on the AVAudioEngine render thread inside handleMicBuffer.
+    // Unguarded, those are real data races on @MainActor storage. All access
+    // goes through stateLock via the computed properties below — call sites
+    // are unchanged. Lock order where nesting occurs: accumulatorLock is
+    // always taken FIRST, stateLock only ever held alone inside it.
+    private let stateLock = NSLock()
+    private var _isMuted = false
+    private var _isProcessing = false
+    private var _micHotAfter = Date.distantPast
+    private var _converter: AVAudioConverter?
+    private var _latestPartial = ""
     /// RMS floor matched to the server's RMS_FLOOR (0.005). Below this is
     /// treated as silence for VAD purposes.
     private let speechRmsThreshold: Float = 0.012   // a bit higher than server floor — local mic gain runs hotter
@@ -94,21 +126,39 @@ final class OnDeviceConversationSession: NSObject {
     // deliverStreamingFinal → either resumes `streamFinalCont` or is stashed in
     // `pendingStreamResult` when the awaiter hasn't installed a continuation yet.
     private var streamingActive = false
-    private var latestPartial = ""
+    /// Written from the recognizer's onPartial hop (main) AND reset on the
+    /// render thread at speech onset — stateLock-guarded.
+    private var latestPartial: String {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _latestPartial }
+        set { stateLock.lock(); _latestPartial = newValue; stateLock.unlock() }
+    }
     private var streamFinalCont: CheckedContinuation<String, Error>?
     private var pendingStreamResult: Result<String, Error>?
+    /// Guards the drained-final await: if the recognizer never delivers (rare
+    /// SFSpeech hang), the waiting continuation is resumed with an error after
+    /// this long instead of a suspended Task leaking forever (A1, was the
+    /// "leaked continuation" at the old :816/:844).
+    private let streamFinalTimeout: TimeInterval = 10
+    private var streamFinalTimeoutTask: Task<Void, Never>?
 
     // State machine
     private var isRunning = false
-    private var isMuted = false
+    /// Read on the render thread at the top of handleMicBuffer — stateLock-guarded.
+    private var isMuted: Bool {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _isMuted }
+        set { stateLock.lock(); _isMuted = newValue; stateLock.unlock() }
+    }
     /// While TTS is playing we suspend new utterance detection so the user
     /// doesn't talk over Gemma's reply (and vice versa). 0.2.29: this is NO
     /// longer set the instant the utterance is cut — the continuation grace
     /// window (below) keeps the mic hot after the send so a resumed thought can
     /// merge. It's asserted when the reply's first audio arrives (half-duplex)
     /// or when the grace window expires. Re-enabled on tts_end / error via
-    /// releaseProcessingAfterDrain().
-    private var isProcessing = false
+    /// releaseProcessingAfterDrain(). Read on the render thread — stateLock-guarded.
+    private var isProcessing: Bool {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _isProcessing }
+        set { stateLock.lock(); _isProcessing = newValue; stateLock.unlock() }
+    }
 
     // MARK: Utterance continuation (0.2.29)
     //
@@ -155,9 +205,12 @@ final class OnDeviceConversationSession: NSObject {
     /// paths from reopening the mic after playback has started.
     private var ttsStartedThisTurn = false
     /// Mic input before this instant is ignored (earback-tone guard). Set on the
-    /// main actor at send time, read on the audio thread — a monotonic Date,
-    /// same off-thread-read posture as isProcessing.
-    private var micHotAfter = Date.distantPast
+    /// main actor at send time, read on the audio thread — stateLock-guarded,
+    /// same posture as isProcessing.
+    private var micHotAfter: Date {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _micHotAfter }
+        set { stateLock.lock(); _micHotAfter = newValue; stateLock.unlock() }
+    }
 
     // MARK: Per-turn speaker verification (0.2.31)
     //
@@ -183,6 +236,19 @@ final class OnDeviceConversationSession: NSObject {
     /// correlation. Re-rolled on every full session start.
     private var sessionId: String = UUID().uuidString
 
+    /// True when the last unmuteMic() actually re-acquired the mic (category
+    /// restored + tap installed + engine running). The view model checks this
+    /// after an unmute so a FAILED unmute can never show "listening" over a
+    /// dead mic (2026-08-07 roundtable A2).
+    private(set) var micReacquired = true
+
+    /// Audio-session defense observers (2026-08-07 roundtable A1). The WS path
+    /// (StreamingSession) has had interruption/route-change/config-change
+    /// recovery since v0.2.x; this DEFAULT on-device path had none — a phone
+    /// call, Siri grab, or BT connect/disconnect silently killed the mic tap.
+    /// Token-based observers on the main queue; removed in deinit.
+    private var lifecycleObservers: [NSObjectProtocol] = []
+
     init?(client: TextTurnClientProtocol) {
         guard let cap = AVAudioFormat(commonFormat: .pcmFormatFloat32,
                                       sampleRate: 16_000,
@@ -196,6 +262,109 @@ final class OnDeviceConversationSession: NSObject {
         self.ttsFormat = tts
         self.textTurnClient = client
         super.init()
+        installAudioSessionObservers()
+    }
+
+    deinit {
+        for token in lifecycleObservers {
+            NotificationCenter.default.removeObserver(token)
+        }
+    }
+
+    private func installAudioSessionObservers() {
+        let nc = NotificationCenter.default
+        // Phone calls / Siri / other apps grabbing the audio session pause our
+        // engine; re-prime on .ended so the conversation keeps working.
+        lifecycleObservers.append(nc.addObserver(
+            forName: AVAudioSession.interruptionNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            MainActor.assumeIsolated { self?.handleAudioInterruption(note) }
+        })
+        // Route changes (BT connect/disconnect, headphones, CarPlay) break the
+        // installed mic tap silently — rebuild it.
+        lifecycleObservers.append(nc.addObserver(
+            forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            MainActor.assumeIsolated { self?.handleRouteChange(note) }
+        })
+        // Configuration changes (e.g. buffer size renegotiation) also
+        // invalidate the mic tap.
+        lifecycleObservers.append(nc.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: nil, queue: .main
+        ) { [weak self] note in
+            MainActor.assumeIsolated { self?.handleEngineConfigurationChange(note) }
+        })
+    }
+
+    private func handleAudioInterruption(_ note: Notification) {
+        guard isRunning else { return }
+        guard let info = note.userInfo,
+              let typeVal = info[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: typeVal) else { return }
+        switch type {
+        case .began:
+            NSLog("[GemmaVoice] on-device: audio interruption began (call/Siri/other app)")
+        case .ended:
+            NSLog("[GemmaVoice] on-device: audio interruption ended — re-priming session")
+            do {
+                try AVAudioSession.sharedInstance().setActive(true, options: [])
+                if !engine.isRunning {
+                    engine.prepare()
+                    try engine.start()
+                }
+                rebuildMicTap()
+            } catch {
+                NSLog("[GemmaVoice] on-device: interruption recovery failed: \(error)")
+            }
+        @unknown default: break
+        }
+    }
+
+    private func handleRouteChange(_ note: Notification) {
+        guard isRunning else { return }
+        guard let reasonVal = note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
+              let reason = AVAudioSession.RouteChangeReason(rawValue: reasonVal) else { return }
+        // Rebuild the mic on any meaningful route change. Skip categoryChange
+        // (that's our own setCategory) and unknown — same policy as the WS path.
+        switch reason {
+        case .newDeviceAvailable, .oldDeviceUnavailable, .override, .routeConfigurationChange:
+            NSLog("[GemmaVoice] on-device: route change \(reasonVal) — rebuilding mic tap")
+            rebuildMicTap()
+        default:
+            break
+        }
+    }
+
+    private func handleEngineConfigurationChange(_ note: Notification) {
+        guard isRunning else { return }
+        NSLog("[GemmaVoice] on-device: engine config change — rebuilding mic tap")
+        rebuildMicTap()
+    }
+
+    /// Reinstall the mic tap after a route/config/interruption event. Never
+    /// relights the mic while muted (mute-mic-only hard rule). Abandons any
+    /// half-captured utterance — the route change invalidated its audio.
+    private func rebuildMicTap() {
+        guard isRunning, !isMuted else { return }
+        accumulatorLock.lock()
+        if inSpeech || streamingActive {
+            streamingActive = false
+            OnDeviceSTT.shared.cancelStreaming()
+        }
+        pcmAccumulator.removeAll(keepingCapacity: true)
+        resetUtteranceState()
+        accumulatorLock.unlock()
+        let input = engine.inputNode
+        input.removeTap(onBus: 0)
+        let hwFormat = input.outputFormat(forBus: 0)
+        self.converter = AVAudioConverter(from: hwFormat, to: captureFormat)
+        input.installTap(onBus: 0, bufferSize: 4096, format: hwFormat) { [weak self] buffer, _ in
+            self?.handleMicBuffer(buffer)
+        }
+        if !engine.isRunning {
+            engine.prepare()
+            try? engine.start()
+        }
     }
 
     func start() throws {
@@ -273,6 +442,7 @@ final class OnDeviceConversationSession: NSObject {
         accumulatorLock.unlock()
         // Release any awaiter that was blocked on a streamed final so its Task
         // doesn't hang after the session is torn down.
+        streamFinalTimeoutTask?.cancel(); streamFinalTimeoutTask = nil
         if let cont = streamFinalCont {
             streamFinalCont = nil
             cont.resume(throwing: OnDeviceSTT.STTError.recognitionFailed("session stopped"))
@@ -365,8 +535,11 @@ final class OnDeviceConversationSession: NSObject {
     /// Unmute: re-acquire the mic on the STILL-ALIVE session — restore the
     /// record+playback category and re-install the input tap on the still-
     /// running engine. Counterpart to muteMicOnly(); no session rebuild.
+    /// A2 (2026-08-07): a FAILED re-acquire keeps isMuted asserted and reports
+    /// micReacquired=false so the UI never shows "listening" over a dead mic.
     func unmuteMic() {
         guard isRunning else { return }
+        var ok = true
         let session = AVAudioSession.sharedInstance()
         do {
             try session.setCategory(.playAndRecord, mode: .spokenAudio,
@@ -377,21 +550,32 @@ final class OnDeviceConversationSession: NSObject {
             }
         } catch {
             NSLog("[GemmaVoice] unmuteMic category restore failed: \(error)")
+            ok = false
         }
-        // Re-install the mic tap on the running engine (fresh converter in case
-        // the hw format changed while playback-only).
-        let input = engine.inputNode
-        let hwFormat = input.outputFormat(forBus: 0)
-        self.converter = AVAudioConverter(from: hwFormat, to: captureFormat)
-        input.removeTap(onBus: 0)
-        input.installTap(onBus: 0, bufferSize: 4096, format: hwFormat) { [weak self] buffer, _ in
-            self?.handleMicBuffer(buffer)
+        if ok {
+            // Re-install the mic tap on the running engine (fresh converter in
+            // case the hw format changed while playback-only).
+            let input = engine.inputNode
+            let hwFormat = input.outputFormat(forBus: 0)
+            self.converter = AVAudioConverter(from: hwFormat, to: captureFormat)
+            input.removeTap(onBus: 0)
+            input.installTap(onBus: 0, bufferSize: 4096, format: hwFormat) { [weak self] buffer, _ in
+                self?.handleMicBuffer(buffer)
+            }
+            if !engine.isRunning {
+                engine.prepare()
+                do {
+                    try engine.start()
+                } catch {
+                    NSLog("[GemmaVoice] unmuteMic engine restart failed: \(error)")
+                    engine.inputNode.removeTap(onBus: 0)
+                    ok = false
+                }
+            }
         }
-        if !engine.isRunning {
-            engine.prepare()
-            try? engine.start()
-        }
-        isMuted = false
+        // Failed unmute stays honestly muted; the next tap retries.
+        isMuted = !ok
+        micReacquired = ok
     }
 
     /// Force-cut the current utterance immediately (Sherman tapping send).
@@ -539,6 +723,24 @@ final class OnDeviceConversationSession: NSObject {
         if streamingActive {
             OnDeviceSTT.shared.appendStreaming(out)
         }
+        // A1 (jetsam): bound the accumulator. Outside speech only a short
+        // pre-roll tail is worth keeping (utterance lead-in) — everything
+        // older is ambient silence that used to accumulate at 64 KB/s for the
+        // life of the session. In speech the VAD force-cut bounds the
+        // utterance (~30s via maxUtteranceFrames), but the hard cap
+        // drop-oldest below guards every remaining path. processedSampleCount
+        // tracks positions in accumulator coordinates, so it shifts with any
+        // front-drop.
+        if !inSpeech && pcmAccumulator.count > preRollKeepSamples {
+            let drop = pcmAccumulator.count - preRollKeepSamples
+            pcmAccumulator.removeFirst(drop)
+            processedSampleCount = max(0, processedSampleCount - drop)
+        }
+        if pcmAccumulator.count > hardCapSamples {
+            let drop = pcmAccumulator.count - hardCapSamples
+            pcmAccumulator.removeFirst(drop)
+            processedSampleCount = max(0, processedSampleCount - drop)
+        }
         accumulatorLock.unlock()
     }
 
@@ -657,8 +859,9 @@ final class OnDeviceConversationSession: NSObject {
             if Task.isCancelled { return }
             if !result.replyText.isEmpty {
                 // Classic path: the reply came back in the X-Reply-Text header.
-                // Show it immediately, exactly as before.
-                self.onEvent?(.transcriptGemma(result.replyText))
+                // Show it immediately, exactly as before. `brain` carries the
+                // server's X-Brain (who ACTUALLY answered) for the UI badge.
+                self.onEvent?(.transcriptGemma(result.replyText, brain: result.brain))
                 self.onEvent?(.ttsEnd)
                 finishTurn()
             } else if let rid = result.rid, !rid.isEmpty {
@@ -812,8 +1015,21 @@ final class OnDeviceConversationSession: NSObject {
     /// routes the drained final to deliverStreamingFinal.
     private func beginStreaming() {
         guard !streamingActive else { return }
-        pendingStreamResult = nil
-        streamFinalCont = nil
+        // Reset the final-handoff state ON THE MAIN ACTOR — beginStreaming is
+        // called from the render thread (speech onset), and streamFinalCont /
+        // pendingStreamResult are main-actor state (A1, render-thread races).
+        // A lingering continuation from an abandoned turn is RESUMED with an
+        // error, never nil'd unresumed — dropping it leaked the awaiting Task
+        // (~2MB) forever (the old :816 bug).
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.pendingStreamResult = nil
+            self.streamFinalTimeoutTask?.cancel(); self.streamFinalTimeoutTask = nil
+            if let cont = self.streamFinalCont {
+                self.streamFinalCont = nil
+                cont.resume(throwing: OnDeviceSTT.STTError.recognitionFailed("superseded by new utterance"))
+            }
+        }
         let ok = OnDeviceSTT.shared.startStreaming(
             onPartial: { [weak self] text in
                 Task { @MainActor in self?.latestPartial = text }
@@ -830,6 +1046,7 @@ final class OnDeviceConversationSession: NSObject {
     /// slightly-later awaitStreamingFinal() picks it up. MainActor serialization
     /// makes this handoff race-free.
     private func deliverStreamingFinal(_ result: Result<String, OnDeviceSTT.STTError>) {
+        streamFinalTimeoutTask?.cancel(); streamFinalTimeoutTask = nil
         let mapped: Result<String, Error> = result.mapError { $0 as Error }
         if let cont = streamFinalCont {
             streamFinalCont = nil
@@ -840,7 +1057,9 @@ final class OnDeviceConversationSession: NSObject {
     }
 
     /// Await the drained final for the just-cut utterance. Returns immediately if
-    /// the final already arrived (stashed), else suspends until deliverStreamingFinal.
+    /// the final already arrived (stashed), else suspends until deliverStreamingFinal
+    /// — bounded by streamFinalTimeout so a hung recognizer can't strand the
+    /// awaiting Task forever (A1, the old :844 had no timeout).
     private func awaitStreamingFinal() async throws -> String {
         if let pending = pendingStreamResult {
             pendingStreamResult = nil
@@ -848,6 +1067,17 @@ final class OnDeviceConversationSession: NSObject {
         }
         return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<String, Error>) in
             streamFinalCont = cont
+            streamFinalTimeoutTask?.cancel()
+            let timeout = streamFinalTimeout
+            streamFinalTimeoutTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                guard let self, !Task.isCancelled else { return }
+                if let cont = self.streamFinalCont {
+                    self.streamFinalCont = nil
+                    cont.resume(throwing: OnDeviceSTT.STTError.recognitionFailed(
+                        "streamed final timed out after \(Int(timeout))s"))
+                }
+            }
         }
     }
 
@@ -972,6 +1202,10 @@ struct TextTurnResult {
     /// nil only if the header was missing. On the streaming path replyText is
     /// empty and the reply is fetched afterwards via fetchReplyText(rid:).
     let rid: String?
+    /// Brain that ACTUALLY answered (X-Brain header, lowercased: "gemma" |
+    /// "jarvis" | "kai"). nil when the server predates the header. Differs
+    /// from the requested agent on a busy-fallback turn — the UI badges it.
+    var brain: String? = nil
 }
 
 /// Inert default client used if nothing else is wired. Returns a friendly
