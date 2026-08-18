@@ -204,14 +204,42 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
                 try? engine.start()
             }
             rebuildMicTap()
-            // P0-1: the WebSocket and its receive loop don't reliably survive a
-            // background stint — the receive-failure path bails out while
-            // backgrounded (wasBackgrounded guard) and never reconnects. Rebuild
-            // the socket from scratch on foreground so we're never falsely
-            // "listening" on a dead socket. reconnectNow forces an immediate
-            // fresh connection (no backoff wait).
-            reconnectNow()
+            // ROOT-CAUSE FIX (2026-08-18 P0): do NOT tear down + rebuild the
+            // socket on every foreground. The old unconditional reconnectNow()
+            // cancelled even a perfectly healthy socket with .goingAway (1001) —
+            // and when it fired mid-reply the reply's transcript_gemma / tts_end
+            // never landed, so the card froze on "Working" forever (the
+            // confirmed production bug). Now: keep a live socket; only rebuild
+            // when it's genuinely dead, and NEVER while TTS is still streaming
+            // back. A kept socket is verified with a ping instead of a
+            // destructive rebuild — the pong refreshes lastPongAt, and a ping
+            // failure routes through handleDisconnect → backoff reconnect.
+            if !isMidReply() && !socketAppearsAlive() {
+                NSLog("[GemmaVoice] foreground — socket dead/stale, reconnecting")
+                reconnectNow()
+            } else {
+                NSLog("[GemmaVoice] foreground — keeping socket (midReply=\(isMidReply())), pinging to verify")
+                sendPing()
+            }
         }
+    }
+
+    /// True while Gemma's reply is still streaming/playing back — TTS is marked
+    /// playing OR scheduled buffers are still draining. A foreground during this
+    /// window must NEVER rebuild the socket: that self-inflicted close is what
+    /// stranded the turn on "Working".
+    private func isMidReply() -> Bool {
+        if isTTSPlaying { return true }
+        ttsBufferLock.lock(); let inFlight = ttsBuffersInFlight; ttsBufferLock.unlock()
+        return inFlight > 0
+    }
+
+    /// Liveness check for the current socket: a live task, no reconnect already
+    /// pending, and a pong/message seen within the timeout window. Decides
+    /// whether a foreground can KEEP the socket rather than rebuild it.
+    private func socketAppearsAlive() -> Bool {
+        guard webSocket != nil, !isReconnecting else { return false }
+        return CFAbsoluteTimeGetCurrent() - lastPongAt <= pongTimeout
     }
 
     private var wasBackgrounded = false
@@ -681,11 +709,14 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
         scheduleReconnect()
     }
 
-    /// Exponential backoff: 1s, 2s, 4s, … capped at 30s.
+    /// Exponential backoff: 1s, 2s, 4s, … capped at 30s, with ±25% jitter so a
+    /// fleet of clients (or repeated attempts after a server restart) don't
+    /// reconnect in lockstep and hammer the server in a thundering herd.
     private func scheduleReconnect() {
-        let delay = min(maxReconnectDelay, pow(2.0, Double(reconnectAttempt)))
+        let base = min(maxReconnectDelay, pow(2.0, Double(reconnectAttempt)))
+        let delay = max(0, base + base * 0.25 * Double.random(in: -1...1))
         reconnectAttempt += 1
-        NSLog("[GemmaVoice] reconnecting in \(delay)s (attempt \(reconnectAttempt))")
+        NSLog("[GemmaVoice] reconnecting in \(String(format: "%.1f", delay))s (attempt \(reconnectAttempt))")
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self = self, self.isRunning, self.isReconnecting else { return }
             self.connectSocket()

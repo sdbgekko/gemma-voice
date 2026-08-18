@@ -27,6 +27,12 @@ struct PendingTurn: Codable {
     /// incident was one turn redelivering on every reconnect. Optional so
     /// records written by 0.2.44–46 still decode (nil reads as 0).
     var redeliveryAttempts: Int?
+    /// 2026-08-18 P0: client-minted stable turn id, set at utterance-cut BEFORE
+    /// the server's X-Turn-Id exists. Lets a VOICE (WS) turn stay identifiable
+    /// across a socket drop/reconnect and is sent to the server (HTTP body
+    /// `client_turn_id` / header `X-Idempotency-Key`) so its dedup can key on
+    /// it. Optional so older records still decode.
+    var clientTurnId: String?
 }
 
 enum PendingTurnStore {
@@ -48,7 +54,20 @@ enum PendingTurnStore {
     /// A turn just dispatched. Overwrites any prior record — correct for the
     /// continuation-merge re-send, which supersedes the same logical turn.
     static func begin(text: String) {
-        write(PendingTurn(rid: nil, text: text, startedAt: Date(), redeliveryAttempts: nil))
+        write(PendingTurn(rid: nil, text: text, startedAt: Date(),
+                          redeliveryAttempts: nil, clientTurnId: nil))
+    }
+
+    /// A VOICE (WS) turn just cut (utterance-cut). Persist a durable record
+    /// keyed on the client-minted id BEFORE any server X-Turn-Id — so a socket
+    /// drop mid-reply leaves the turn identifiable on reconnect. Voice replies
+    /// aren't re-fetchable (the server stores replies by X-Turn-Id only on the
+    /// HTTP path), so this record has no `rid`; it exists for identity +
+    /// stranded-turn resolution, not redelivery. Text fills in later from
+    /// transcript_you, so it starts empty.
+    static func beginVoice(clientTurnId: String) {
+        write(PendingTurn(rid: nil, text: "", startedAt: Date(),
+                          redeliveryAttempts: nil, clientTurnId: clientTurnId))
     }
 
     /// Response headers arrived: the turn now has its server fetch key.
@@ -66,6 +85,15 @@ enum PendingTurnStore {
     static func clear() {
         if let rid = read()?.rid { markResolved(rid) }
         UserDefaults.standard.removeObject(forKey: key)
+    }
+
+    /// Clear ONLY when the current record is a VOICE turn (client-minted id, no
+    /// server rid). Guards a concurrent HTTP/photo turn — which owns the single
+    /// slot with an rid — from being wiped by a voice turn's completion or a
+    /// stranded-turn resolution.
+    static func clearIfVoice() {
+        guard let p = read() else { return }
+        if p.rid == nil && p.clientTurnId != nil { clear() }
     }
 
     /// Has a server response for this rid already been handled?

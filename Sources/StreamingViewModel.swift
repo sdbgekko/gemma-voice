@@ -885,6 +885,44 @@ final class StreamingViewModel: ObservableObject {
         endKeepalive()
     }
 
+    /// 2026-08-18 P0 — resolve a stranded VOICE turn on reconnect. A genuine
+    /// socket death (server restart / network loss) can leave a voice turn's
+    /// card stuck in .working/.speaking: the reply events will never arrive on
+    /// the dead socket, and — unlike HTTP/photo turns — a WS reply is NOT
+    /// re-fetchable (the server stores replies by X-Turn-Id only on /text_turn).
+    /// So we finalize the card honestly rather than leave it frozen on
+    /// "Working" forever. HTTP turns (rid present) are left to
+    /// recoverPendingTurnIfNeeded. Safe to call on every reconnect: no-ops when
+    /// nothing is stranded.
+    private func resolveStrandedVoiceTurn() {
+        // A recoverable HTTP/photo turn (has a server fetch key) is not ours to
+        // finalize — its reply is still fetchable elsewhere.
+        if let p = PendingTurnStore.pending(), p.rid != nil { return }
+        guard let i = latestPendingIndex else {
+            // No open card, but a voice pending lingered (e.g. app killed
+            // mid-turn then relaunched) — drop the orphan so it can't keep
+            // audio falsely "busy".
+            PendingTurnStore.clearIfVoice()
+            return
+        }
+        switch ledger[i].phase {
+        case .speaking where ledger[i].reply != nil:
+            // Reply text already rendered; only the tts_end was lost with the
+            // socket. Advance to done rather than dropping a turn we answered.
+            ledger[i].phase = .answered
+            ledger[i].answeredAt = Date()
+        case .heard, .sent, .working, .speaking:
+            NSLog("[GemmaVoice] stranded voice turn on reconnect — marking interrupted")
+            ledger[i].phase = .dropped("connection interrupted — tap the mic and try again")
+        default:
+            break
+        }
+        PendingTurnStore.clearIfVoice()
+        if !userMuted, status == .thinking || status == .heardYou || status == .playing {
+            status = .listening
+        }
+    }
+
     /// 0.2.43: Action-Button / Siri / gemmavoice://talk fast path — force an
     /// active listening state via the SAME code a manual session-start uses
     /// (no duplicated audio-session logic). Clears a sticky mute through the
@@ -1027,6 +1065,16 @@ final class StreamingViewModel: ObservableObject {
             UINotificationFeedbackGenerator().notificationOccurred(.success)
             status = .heardYou
             ledgerAppendHeard()
+            // 2026-08-18 P0 (foundation): give the voice turn a stable client-
+            // minted id the moment the utterance is cut — BEFORE any server
+            // X-Turn-Id — so it stays identifiable across a socket drop/reconnect
+            // and inbound events can be matched to the right card. Persisted in
+            // PendingTurnStore (survives suspension/relaunch) and stamped on the
+            // just-opened card. WS replies aren't re-fetchable, so this record
+            // exists for identity + stranded-turn resolution, not redelivery.
+            let clientTurnId = UUID().uuidString
+            PendingTurnStore.beginVoice(clientTurnId: clientTurnId)
+            if let i = latestPendingIndex { ledger[i].rid = clientTurnId }
         case .transcriptYou(let text, let speaker):
             if !text.isEmpty {
                 appendTurn(text: text, isGemma: false, source: nil, speaker: speaker)
@@ -1047,6 +1095,7 @@ final class StreamingViewModel: ObservableObject {
         case .ttsEnd:
             ledgerAnswered()
             endKeepalive()   // 0.2.44: turn resolved — release background runtime
+            PendingTurnStore.clearIfVoice()   // voice turn done — drop its pending record
             if userMuted {
                 status = .muted
             } else if status == .playing || status == .thinking || status == .heardYou {
@@ -1065,6 +1114,7 @@ final class StreamingViewModel: ObservableObject {
             }
             ledgerDropped(reason)
             endKeepalive()
+            PendingTurnStore.clearIfVoice()   // voice turn resolved (dropped) — drop its pending record
             if userMuted {
                 status = .muted
             } else if status == .thinking || status == .heardYou {
@@ -1091,6 +1141,11 @@ final class StreamingViewModel: ObservableObject {
             // pending record exists (HTTP-path turns carry the fetchable id;
             // WS turns will once the server echoes a rid), recover its reply.
             recoverPendingTurnIfNeeded(trigger: "ws-reconnect")
+            // 2026-08-18 P0: a VOICE turn stranded by a genuine socket death
+            // isn't re-fetchable — finalize its card so it never sticks on
+            // "Working" forever (recoverPendingTurnIfNeeded leaves it alone: no
+            // rid). No-op when nothing is stranded.
+            resolveStrandedVoiceTurn()
         case .agent(let name):
             // Server is announcing which agent the voice channel is bound to.
             currentAgentName = name

@@ -12,6 +12,14 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.48",
+            date: "Aug 18",
+            hints: [
+                "Fixed replies getting stuck on \"Working\" with no text. When you switched away from the app, or it briefly reconnected while Gemma was still answering, the app was tearing down its own connection in the middle of her reply — so her words never landed and the turn froze on \"Working\" forever, even though you could still hear her voice. Now the app keeps a healthy connection instead of rebuilding it on every foreground, and never drops it while she's still speaking. If a turn does get cut off by a real disconnect, it clears itself and asks you to tap the mic and try again, instead of hanging.",
+                "Reconnects are gentler and safer. Each turn now carries its own ID, so a reconnect can no longer cause the same turn to be processed twice, and the app stops reconnecting in a lockstep rush that used to pile up right after the server restarted.",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.47",
             date: "Aug 8",
             hints: [

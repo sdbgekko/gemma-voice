@@ -128,8 +128,17 @@ final class TextTurnClient: TextTurnClientProtocol {
         if let imageBase64 {
             payload["image_base64"] = imageBase64
         }
+        // 2026-08-18 P0: stable client-minted turn id. Rides in the signed body
+        // as `client_turn_id` (the server's coalescing ledger keys on it) and is
+        // mirrored in the X-Idempotency-Key header. A single stable value per
+        // request lets the already-shipped server dedup collapse an accidental
+        // double-POST of the same turn instead of injecting + speaking it twice.
+        let clientTurnId = UUID().uuidString
+        payload["client_turn_id"] = clientTurnId
+
         let bodyData = try JSONSerialization.data(withJSONObject: payload)
         req.httpBody = bodyData
+        req.setValue(clientTurnId, forHTTPHeaderField: "X-Idempotency-Key")
 
         // Sign the body with the Keychain-stored shared secret. If no
         // secret is provisioned yet, fail FAST with a user-actionable

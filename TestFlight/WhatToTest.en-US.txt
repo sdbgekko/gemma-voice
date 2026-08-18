@@ -1,9 +1,3 @@
-0.2.47 — three fixes:
+0.2.48 — Stuck "Working" fix
 
-• Interrupt Gemma: talk over her mid-reply and she stops and listens — your words come through instead of being dropped. (Settings toggle if it misfires; if she starts hearing herself, turn it off there.)
-
-• Repeat-loop fixed: a missed reply now redelivers at most twice, never endlessly.
-
-• Paste a photo: copy an image anywhere, tap the photo button → "Paste Image."
-
-Test: talk over her mid-story · kill your connection mid-turn and reconnect · paste a screenshot.
+Please test: talk to Gemma, then switch away from the app (or lock the screen) while she is answering, and come back. Her reply should finish and the card should show the text — it should NOT freeze on "Working" anymore. Normal turns should still show text and advance Working -> Speaking -> done.
