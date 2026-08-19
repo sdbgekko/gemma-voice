@@ -12,6 +12,14 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.50",
+            date: "Aug 19",
+            hints: [
+                "Fixed the mic occasionally going deaf. If a phone call, Siri, or switching away from the app landed in the middle of Gemma's reply, the audio could get stuck in a state where she stopped hearing you until you force-quit and reopened — because the app was waiting on a playback signal that never arrived. There's now a watchdog that always reopens the mic once she's done speaking, no matter what, so it can't get wedged shut anymore.",
+                "Fixed a rare crash when connecting or disconnecting AirPods/headphones mid-conversation. The audio converter could be swapped out from under the microphone while it was mid-use; each mic tap now owns its own converter so that can't happen.",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.49",
             date: "Aug 19",
             hints: [

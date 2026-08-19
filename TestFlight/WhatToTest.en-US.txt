@@ -1,3 +1,7 @@
-0.2.49 — Stuck "Working" fix (hardened)
+0.2.50 — Mic reliability fixes
 
-Please test: talk to Gemma, then switch away from the app (or lock the screen) while she is answering, and come back — try it at different moments, including the instant right after she starts replying but before you hear her voice. Her reply should finish and the card should show the text — it should NOT freeze on "Working" at any point in the reply. Normal turns should still show text and advance Working -> Speaking -> done.
+Two fixes under the hood:
+1) The mic could occasionally go "deaf" — stop hearing you — after a phone call, Siri, or switching away mid-reply, until you restarted the app. Fixed with a watchdog that always reopens the mic.
+2) A rare crash when connecting/disconnecting AirPods or headphones while talking. Fixed.
+
+Please test: (a) talk to Gemma, trigger Siri or take a call while she's replying, come back, and confirm she still hears you ("can you hear me?"). (b) Connect/disconnect AirPods a few times mid-conversation — no crash, mic keeps working.

@@ -41,7 +41,10 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
     private(set) var micReacquired = true
     private let targetFormat: AVAudioFormat    // 16kHz mono float32 — mic upload
     private let ttsFormat: AVAudioFormat       // 24kHz mono float32 — Kokoro PCM playback
-    private var converter: AVAudioConverter?
+    // P0 (0.2.50): the mic converter is no longer a shared stored property —
+    // it is captured per-tap in the installTap closure so the render thread
+    // never reads a converter a concurrent rebuild could swap mid-convert
+    // (AVAudioConverter is not thread-safe → use-after-free crash on route change).
     /// Resamples 24kHz Kokoro PCM to whatever format playerNode is wired
     /// at (which mirrors the engine's output rate — 16kHz under voiceChat,
     /// 24/48kHz under spokenAudio). Built once at start; rebuilt on engine
@@ -150,12 +153,13 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
         let input = engine.inputNode
         input.removeTap(onBus: 0)
         let hwFormat = input.outputFormat(forBus: 0)
-        self.converter = AVAudioConverter(from: hwFormat, to: targetFormat)
         accumulatorLock.lock()
         pcmAccumulator.removeAll(keepingCapacity: true)
         accumulatorLock.unlock()
-        input.installTap(onBus: 0, bufferSize: 4096, format: hwFormat) { [weak self] buffer, _ in
-            self?.handleMicBuffer(buffer)
+        if let conv = AVAudioConverter(from: hwFormat, to: targetFormat) {
+            input.installTap(onBus: 0, bufferSize: 4096, format: hwFormat) { [weak self] buffer, _ in
+                self?.handleMicBuffer(buffer, converter: conv)
+            }
         }
         if !engine.isRunning {
             engine.prepare()
@@ -271,6 +275,15 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
     // part of the mid-speech-cutoff fix (task #16); barge-in ON covers speech
     // that lands while she's still talking.
     private let ttsDrainTailGrace: TimeInterval = 0.3
+    // P0 (0.2.50): bounded drain-release watchdog. A scheduleBuffer completion
+    // handler can fail to fire — e.g. a chunk scheduled while the engine was
+    // stopped (call/Siri/background mid-reply) — leaving ttsBuffersInFlight
+    // latched >0 and isTTSPlaying=true forever, so the mic-upload gate stays
+    // shut and the mic goes deaf until an app restart. This deadline-bounded
+    // release clears the gate regardless of completion bookkeeping (mirrors the
+    // on-device playerNode.isPlaying poll with a hard cap).
+    private var ttsDrainTask: Task<Void, Never>?
+    private let ttsDrainHardCap: TimeInterval = 6.0
 
     // Barge-in: track whether TTS is currently playing so the mic path can
     // detect user speech-over-TTS and signal an interrupt to the server.
@@ -357,10 +370,11 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
 
         let input = engine.inputNode
         let hwFormat = input.outputFormat(forBus: 0)
-        self.converter = AVAudioConverter(from: hwFormat, to: targetFormat)
         input.removeTap(onBus: 0)
-        input.installTap(onBus: 0, bufferSize: 4096, format: hwFormat) { [weak self] buffer, _ in
-            self?.handleMicBuffer(buffer)
+        if let conv = AVAudioConverter(from: hwFormat, to: targetFormat) {
+            input.installTap(onBus: 0, bufferSize: 4096, format: hwFormat) { [weak self] buffer, _ in
+                self?.handleMicBuffer(buffer, converter: conv)
+            }
         }
         engine.prepare()
         try engine.start()
@@ -561,7 +575,7 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
 
     // MARK: - Mic path
 
-    private func handleMicBuffer(_ buffer: AVAudioPCMBuffer) {
+    private func handleMicBuffer(_ buffer: AVAudioPCMBuffer, converter: AVAudioConverter) {
         if isMuted {
             // Keep the waveform rolling toward flat instead of freezing.
             DispatchQueue.main.async { [weak self] in self?.onEvent?(.level(0)) }
@@ -576,7 +590,6 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
             DispatchQueue.main.async { [weak self] in self?.onEvent?(.level(0)) }
             return
         }
-        guard let converter = converter else { return }
         let sourceRate = buffer.format.sampleRate
         let ratio = targetFormat.sampleRate / sourceRate
         let outCapacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 1024
@@ -840,21 +853,19 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
                     self.onEvent?(.transcriptGemma(json["text"] as? String ?? "",
                                                     source: json["source"] as? String))
                 case "tts_end":
-                    // P0-2: tts_end means the server is done SENDING, not that
-                    // audio has finished PLAYING. Don't clear isTTSPlaying (the
-                    // mic-upload gate) here — that reopens the mic while our own
-                    // speaker is still draining and the server transcribes our
-                    // voice as the user. If all scheduled buffers have already
-                    // drained, start the tail-grace timer; otherwise the last
-                    // buffer's completion handler starts it.
-                    self.ttsBufferLock.lock()
-                    let alreadyDrained = self.ttsBuffersInFlight <= 0
-                    self.ttsBufferLock.unlock()
-                    if alreadyDrained { self.scheduleTTSDrainCheck() }
-                    self.hasServerReply = false   // reply text lifecycle done (0.2.49); drain still gates via ttsBuffersInFlight
+                    // tts_end means the server is done SENDING, not that audio
+                    // has finished PLAYING — don't clear the mic gate here or the
+                    // mic reopens while the speaker is still draining and re-
+                    // transcribes Gemma's tail. P0 (0.2.50): arm the bounded
+                    // drain-release, which waits for real playout (isPlaying) up
+                    // to a hard cap and then force-clears the gate — so a lost
+                    // completion handler can never wedge the mic deaf.
+                    self.releaseGateAfterDrain()
+                    self.hasServerReply = false   // reply text lifecycle done (0.2.49)
                     self.onEvent?(.ttsEnd)
                 case "tts_interrupted":
                     // Barge-in / interrupt: flush immediately and reopen the mic.
+                    self.ttsDrainTask?.cancel()   // a pending drain-release must not fire into the interrupt
                     self.isTTSPlaying = false
                     self.hasServerReply = false
                     self.bargeInFrames = 0
@@ -916,6 +927,18 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
         } else {
             bufferToSchedule = inBuffer
         }
+        // P0 (0.2.50): never schedule a buffer the engine can't render. A no-op
+        // play() on a stopped engine means the completion handler never fires and
+        // the mic gate latches shut. Recover the engine, or drop this chunk —
+        // dropping a little audio is far better than a deaf mic.
+        if !engine.isRunning {
+            engine.prepare()
+            try? engine.start()
+        }
+        guard engine.isRunning else {
+            NSLog("[GemmaVoice] dropping TTS chunk — engine down, not latching gate")
+            return
+        }
         if !playerNode.isPlaying {
             playerNode.play()
         }
@@ -941,6 +964,7 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
         // First chunk of a turn arms the grace-period window so the
         // player-warmup tail and TTS-bleed-through-mic can't self-interrupt.
         if !isTTSPlaying {
+            ttsDrainTask?.cancel()   // new turn — cancel any pending drain-release from the last turn
             bargeInArmedAt = CFAbsoluteTimeGetCurrent() + bargeInGracePeriod
             bargeInEnabled = UserDefaults.standard.bool(forKey: "bargeInEnabled")
         }
@@ -963,6 +987,30 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
                 self.isTTSPlaying = false
                 self.bargeInFrames = 0
             }
+        }
+    }
+
+    /// P0 (0.2.50): bounded, self-releasing drain gate armed at tts_end. Waits
+    /// for playback to actually finish (playerNode.isPlaying) but NEVER longer
+    /// than ttsDrainHardCap, then force-clears the mic-upload gate regardless of
+    /// completion-handler bookkeeping — so a lost TTS completion handler can no
+    /// longer latch the mic deaf. Cancelled when a new turn starts or an
+    /// interrupt fires. Runs on the main actor (all gate state is main-thread).
+    private func releaseGateAfterDrain() {
+        ttsDrainTask?.cancel()
+        ttsDrainTask = Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            let deadline = Date().addingTimeInterval(self.ttsDrainHardCap)
+            while Date() < deadline && self.playerNode.isPlaying {
+                try? await Task.sleep(nanoseconds: 100_000_000)
+                if Task.isCancelled { return }
+            }
+            if Task.isCancelled { return }
+            try? await Task.sleep(nanoseconds: UInt64(self.ttsDrainTailGrace * 1_000_000_000))
+            if Task.isCancelled { return }
+            self.ttsBufferLock.lock(); self.ttsBuffersInFlight = 0; self.ttsBufferLock.unlock()
+            self.isTTSPlaying = false
+            self.bargeInFrames = 0
         }
     }
 
