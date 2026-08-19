@@ -1,3 +1,3 @@
-0.2.48 — Stuck "Working" fix
+0.2.49 — Stuck "Working" fix (hardened)
 
-Please test: talk to Gemma, then switch away from the app (or lock the screen) while she is answering, and come back. Her reply should finish and the card should show the text — it should NOT freeze on "Working" anymore. Normal turns should still show text and advance Working -> Speaking -> done.
+Please test: talk to Gemma, then switch away from the app (or lock the screen) while she is answering, and come back — try it at different moments, including the instant right after she starts replying but before you hear her voice. Her reply should finish and the card should show the text — it should NOT freeze on "Working" at any point in the reply. Normal turns should still show text and advance Working -> Speaking -> done.

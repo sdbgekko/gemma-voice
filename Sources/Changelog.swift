@@ -12,6 +12,13 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.49",
+            date: "Aug 19",
+            hints: [
+                "Closed one more gap that could freeze a reply on \"Working\". There's a brief moment right after Gemma's words arrive but before her voice starts playing — if you switched back to the app in exactly that instant, it could still rebuild the connection and strand the turn. The app now treats that in-between moment as \"still replying\" and leaves the connection alone until she's actually done, so switching apps mid-answer is safe throughout the whole reply.",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.48",
             date: "Aug 18",
             hints: [

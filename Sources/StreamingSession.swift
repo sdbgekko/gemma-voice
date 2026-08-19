@@ -230,6 +230,10 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
     /// stranded the turn on "Working".
     private func isMidReply() -> Bool {
         if isTTSPlaying { return true }
+        // Pre-TTS window: the reply text has arrived but no audio buffer has
+        // scheduled yet. Without this, a foreground here rebuilds the socket and
+        // strands the turn on "Working" (0.2.49 hardening).
+        if hasServerReply { return true }
         ttsBufferLock.lock(); let inFlight = ttsBuffersInFlight; ttsBufferLock.unlock()
         return inFlight > 0
     }
@@ -271,6 +275,15 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
     // Barge-in: track whether TTS is currently playing so the mic path can
     // detect user speech-over-TTS and signal an interrupt to the server.
     private var isTTSPlaying = false
+    /// 0.2.49: true from when the server's reply TEXT (transcript_gemma) lands
+    /// until the turn terminates (tts_end/interrupted/dropped) or a new turn /
+    /// reconnect resets it. Closes the pre-TTS window Kai flagged: between the
+    /// reply arriving and the first TTS buffer scheduling, isTTSPlaying and
+    /// ttsBuffersInFlight are both still 0, so isMidReply() would wrongly say
+    /// "not mid-reply" and a foreground could rebuild the socket and strand the
+    /// turn. Main-thread only (set/cleared inside DispatchQueue.main handlers and
+    /// connectSocket), so no lock — same posture as isTTSPlaying's writers.
+    private var hasServerReply = false
     /// 0.2.46 single audio owner: true while the view model's HTTP reply player
     /// (photo/typed turns) is speaking. Gates mic upload just like isTTSPlaying
     /// so this session's live mic can't re-capture the HTTP audio as a user
@@ -693,6 +706,7 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
         task.resume()
         lastPongAt = CFAbsoluteTimeGetCurrent()
         isReconnecting = false
+        hasServerReply = false   // fresh socket — no reply in flight; prevents a stuck-true flag (0.2.49)
         startPingTimer()
         receiveLoop()
     }
@@ -812,6 +826,7 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
             DispatchQueue.main.async {
                 switch type {
                 case "speech_start":
+                    self.hasServerReply = false   // new user turn — clear any prior reply-in-flight (0.2.49)
                     self.onEvent?(.speechStart)
                 case "speech_end":
                     self.onEvent?(.speechEnd)
@@ -819,6 +834,9 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
                     self.onEvent?(.transcriptYou(json["text"] as? String ?? "",
                                                   speaker: json["speaker"] as? String))
                 case "transcript_gemma":
+                    // Reply text landed — mark the turn in-flight so a foreground
+                    // in the pre-TTS window won't rebuild the socket (0.2.49).
+                    self.hasServerReply = true
                     self.onEvent?(.transcriptGemma(json["text"] as? String ?? "",
                                                     source: json["source"] as? String))
                 case "tts_end":
@@ -833,16 +851,19 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
                     let alreadyDrained = self.ttsBuffersInFlight <= 0
                     self.ttsBufferLock.unlock()
                     if alreadyDrained { self.scheduleTTSDrainCheck() }
+                    self.hasServerReply = false   // reply text lifecycle done (0.2.49); drain still gates via ttsBuffersInFlight
                     self.onEvent?(.ttsEnd)
                 case "tts_interrupted":
                     // Barge-in / interrupt: flush immediately and reopen the mic.
                     self.isTTSPlaying = false
+                    self.hasServerReply = false
                     self.bargeInFrames = 0
                     self.ttsBufferLock.lock(); self.ttsBuffersInFlight = 0; self.ttsBufferLock.unlock()
                     self.playerNode.stop()
                     self.playerNode.reset()
                     self.onEvent?(.ttsEnd)
                 case "dropped":
+                    self.hasServerReply = false
                     self.onEvent?(.dropped(json["reason"] as? String ?? ""))
                 case "agent":
                     if let name = json["name"] as? String, !name.isEmpty {
