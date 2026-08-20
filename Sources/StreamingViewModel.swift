@@ -1025,6 +1025,14 @@ final class StreamingViewModel: ObservableObject {
                 status = .listening
             }
         case .dropped(let reason):
+            // 0.2.54 fix (Sherman): a no-speech drop gets NO card and NO
+            // banner — remove the dangling pending card and resume quietly.
+            if reason == "no-speech" {
+                if let i = latestPendingIndex { ledger.remove(at: i) }
+                endKeepalive()
+                status = userMuted ? .muted : .listening
+                break
+            }
             ledgerDropped(reason)
             endKeepalive()
             if userMuted {

@@ -202,7 +202,7 @@ final class OnDeviceConversationSession: NSObject {
     /// RMS bar the AEC-cleaned mic must clear (~ StreamingSession's proven
     /// barge-in threshold) and how many consecutive ~85ms callbacks (2 ≈
     /// 170ms of sustained speech — a cough usually fails the streak).
-    private let talkoverThreshold: Float = 0.04
+    private let talkoverThreshold: Float = 0.02  // AEC/NS-processed mic runs quiet; 0.04 missed casual speech
     private let talkoverStreakToFire = 2
 
     // MARK: Utterance continuation (0.2.29)
@@ -835,6 +835,11 @@ final class OnDeviceConversationSession: NSObject {
             if isSpeech {
                 if !inSpeech {
                     inSpeech = true
+                    // 0.2.54 fix: universal yield — if her audio is still
+                    // draining (the tail past the 2s processing release, where
+                    // the talk-over detector is off duty), the user's speech
+                    // onset cuts the voice. AEC-gated inside the hop.
+                    Task { @MainActor [weak self] in self?.yieldPlaybackToUser() }
                     // Spin up the live recognizer at speech onset so THIS
                     // utterance is transcribed as it arrives. The current `out`
                     // buffer (fed below) carries the onset, so no lead-in drop.
@@ -942,7 +947,10 @@ final class OnDeviceConversationSession: NSObject {
             // we captured one, so a drain hiccup doesn't drop a whole utterance.
             let fallback = latestPartial.trimmingCharacters(in: .whitespacesAndNewlines)
             if fallback.isEmpty {
-                self.onEvent?(.dropped("stt: \(error)"))
+                // 0.2.54 fix (Sherman): "no speech" is not an error worth a
+                // bubble — the utterance was noise/breath. Drop SILENTLY via
+                // the sentinel; the UI removes the card and resumes listening.
+                self.onEvent?(.dropped("no-speech"))
                 return
             }
             transcript = fallback
@@ -1198,6 +1206,18 @@ final class OnDeviceConversationSession: NSObject {
         } else {
             talkoverStreak = 0
         }
+    }
+
+    /// 0.2.54 fix: cut a still-draining reply tail when the user starts
+    /// speaking through the NORMAL mic path (isProcessing already released by
+    /// the 2s drain cap, voice still audible — the window Sherman hit).
+    private func yieldPlaybackToUser() {
+        guard UserDefaults.standard.bool(forKey: "aecEnabled"),
+              !isProcessing, playerNode.isPlaying else { return }
+        NSLog("[GemmaVoice] talk-over: yield — user spoke during audio tail, cutting")
+        talkoverCut = true            // drop any still-arriving chunks of that reply
+        playerNode.stop()
+        playerNode.reset()
     }
 
     /// 0.2.54: the user talked over her — cut the voice, keep the words.
