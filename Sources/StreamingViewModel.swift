@@ -993,10 +993,22 @@ final class StreamingViewModel: ObservableObject {
                 ledgerSetReply(text, source: source)
             }
             if !userMuted { status = .playing }
+        case .replyTextPartial(let text):
+            // 0.2.53 text-keeps-pace: the reply text as it grows DURING the
+            // audio. Update the open card in place — ledgerSetReply targets the
+            // pending card, so repeated partials can never mint a second
+            // bubble. No appendTurn here (the transcript row lands once, from
+            // .replyTextLate at the end); no status change (audio is playing
+            // and already drives status).
+            if !text.isEmpty {
+                ledgerSetReply(text, source: "gemma")
+            }
         case .replyTextLate(let text):
             // Streaming path: reply text arrived after the audio (and after
             // ttsEnd already moved the card to .answered). Backfill the card's
-            // Gemma text without touching status/phase.
+            // Gemma text without touching status/phase. (When 0.2.53 partials
+            // already filled the card, ledgerBackfillReply no-ops harmlessly —
+            // this case then just appends the transcript row.)
             if !text.isEmpty {
                 appendTurn(text: text, isGemma: true, source: "gemma", speaker: nil)
                 ledgerBackfillReply(text)

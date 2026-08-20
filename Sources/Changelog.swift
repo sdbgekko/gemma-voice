@@ -12,6 +12,13 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.53",
+            date: "Aug 20",
+            hints: [
+                "The reply text now keeps pace with Gemma's voice. Before, on the streaming path the text card only filled in after the entire reply finished playing — on a long answer that meant hearing her for 30+ seconds while the bubble stayed empty. Now the server publishes each sentence's text the moment it's spoken and the app polls for it while the audio plays, so the words stream into the card roughly in step with her voice. This also lays the groundwork for the next feature: talking over her to stop her voice while keeping the text to read.",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.52",
             date: "Aug 20",
             hints: [

@@ -1,11 +1,5 @@
-0.2.52 — Echo cancellation (BETA, off by default)
+0.2.53 — Text keeps pace with the voice
 
-New Settings toggle: "Echo cancellation (beta)". OFF by default — the app behaves exactly as 0.2.51 until you turn it on. When ON, it uses Apple's hardware echo canceller so the mic can stay open while Gemma is speaking (talk over her / add on without the mic shutting off).
+The reply text now streams into the card sentence-by-sentence WHILE Gemma is speaking, instead of dumping in after the whole reply finished (previously a 30s+ text delay on long replies).
 
-Please test (flip it ON in Settings, then):
-1. On SPEAKER: play a reply — audio must NOT be silent, tinny, or garbled.
-2. Talk over Gemma while she's speaking — she should hear you cleanly (no echo of her own voice coming back as your words).
-3. Connect/disconnect AirPods mid-conversation — playback should keep working (not go silent), and Gemma should still sound full-quality on AirPods.
-4. Flip it OFF — should revert instantly to normal behavior.
-
-If anything sounds wrong at any step, just turn the toggle OFF — it reverts immediately, no reinstall needed. Report what you heard.
+Please test: ask something that gets a long answer. The text bubble should start filling within a second or two of her voice starting, and grow roughly in step with what she's saying. Confirm: no duplicate bubbles, and the final text matches what she said.

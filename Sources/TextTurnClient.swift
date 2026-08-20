@@ -263,4 +263,28 @@ final class TextTurnClient: TextTurnClientProtocol {
         // {"reply": "<text>"} → the string; {"reply": null} → NSNull → nil.
         return json["reply"] as? String
     }
+
+    /// 0.2.53 text-keeps-pace: like fetchReplyText, but also returns the
+    /// server's `final` flag. During sentence-streaming the server stores the
+    /// accumulating text after EACH sentence (final=false) so the app can poll
+    /// while the audio is still playing and render the words in pace with the
+    /// voice; final=true marks the complete reply. Older servers omit `final`
+    /// → treated as final (preserves the old fetch-after-audio behavior).
+    func fetchReplyState(rid: String) async throws -> (reply: String?, final: Bool) {
+        guard var comps = URLComponents(
+            url: baseURL.appendingPathComponent("reply_text"),
+            resolvingAgainstBaseURL: false
+        ) else { return (nil, true) }
+        comps.queryItems = [URLQueryItem(name: "rid", value: rid)]
+        guard let url = comps.url else { return (nil, true) }
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        let (data, response) = try await session.data(for: req)
+        guard let http = response as? HTTPURLResponse,
+              (200..<300).contains(http.statusCode),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return (nil, true)
+        }
+        return (json["reply"] as? String, (json["final"] as? Bool) ?? true)
+    }
 }

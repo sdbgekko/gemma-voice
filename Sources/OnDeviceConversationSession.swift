@@ -46,6 +46,10 @@ final class OnDeviceConversationSession: NSObject {
         /// (fetched via /reply_text once ttsEnd already closed the turn). The
         /// UI backfills the already-answered card's Gemma text with this.
         case replyTextLate(String)
+        /// 0.2.53 text-keeps-pace: partial reply text polled DURING sentence-
+        /// stream playback (grows sentence-by-sentence alongside the audio).
+        /// The UI updates the open card's text in place — never a new card.
+        case replyTextPartial(String)
         case ttsEnd
         case dropped(String)
         case sessionError(Error)
@@ -215,6 +219,10 @@ final class OnDeviceConversationSession: NSObject {
     /// Gemma text card. Cancelled on stop() so a teardown can't fire a late
     /// event into a dead session.
     private var lateReplyTask: Task<Void, Never>?
+    /// 0.2.53 text-keeps-pace: polls /reply_text DURING sentence-stream audio
+    /// (started the moment X-Turn-Id lands) so the text card fills in sentence-
+    /// by-sentence alongside the voice instead of dumping in after the reply.
+    private var liveReplyPollTask: Task<Void, Never>?
     /// Set once the open turn's reply audio has begun — guards the grace/expiry
     /// paths from reopening the mic after playback has started.
     private var ttsStartedThisTurn = false
@@ -507,6 +515,7 @@ final class OnDeviceConversationSession: NSObject {
         graceTimerTask?.cancel(); graceTimerTask = nil
         inFlightTurnTask?.cancel(); inFlightTurnTask = nil
         lateReplyTask?.cancel(); lateReplyTask = nil
+        liveReplyPollTask?.cancel(); liveReplyPollTask = nil
         setGraceActive(false)
         pendingTurnText = ""
         pendingTurnAudio = []
@@ -551,6 +560,7 @@ final class OnDeviceConversationSession: NSObject {
         PendingTurnStore.clear()
         inFlightTurnTask?.cancel(); inFlightTurnTask = nil
         lateReplyTask?.cancel(); lateReplyTask = nil
+        liveReplyPollTask?.cancel(); liveReplyPollTask = nil
         graceTimerTask?.cancel(); graceTimerTask = nil
         setGraceActive(false)
         pendingTurnText = ""
@@ -957,10 +967,17 @@ final class OnDeviceConversationSession: NSObject {
                 sessionId: sessionId,
                 wavBase64: wavBase64,
                 imageBase64: nil,   // voice turns carry no photo (0.2.45)
-                onTurnId: { rid in
+                onTurnId: { [weak self] rid in
                     // URLSession delivers this off-main; the store is
                     // UserDefaults-backed and thread-safe.
                     PendingTurnStore.assignRid(rid)
+                    // 0.2.53 text-keeps-pace: headers land BEFORE the audio
+                    // streams, so start polling the growing reply text now —
+                    // the card fills in alongside the voice. (Main-actor hop:
+                    // the poll task is main-actor state.)
+                    Task { @MainActor [weak self] in
+                        self?.startLiveReplyPoll(rid: rid)
+                    }
                 },
                 onAudioChunk: { [weak self] chunk in
                     guard let self = self else { return }
@@ -1034,6 +1051,31 @@ final class OnDeviceConversationSession: NSObject {
     /// non-null, emit .replyTextLate so the UI backfills the answered card.
     /// Runs detached from the turn's request task — audio already played, so
     /// nothing here blocks playback or the mic. Cancelled on stop().
+    /// 0.2.53 text-keeps-pace: poll /reply_text every ~700ms WHILE the sentence-
+    /// stream audio is playing, emitting .replyTextPartial as the text grows so
+    /// the card keeps pace with the voice. Stops on the server's final=true (or
+    /// a 2-minute bound). The existing fetchLateReply still runs after audio as
+    /// the transcript-row/backfill step — its ledger backfill no-ops harmlessly
+    /// when partials already filled the card.
+    private func startLiveReplyPoll(rid: String) {
+        liveReplyPollTask?.cancel()
+        liveReplyPollTask = Task { [weak self] in
+            var lastEmitted = ""
+            for _ in 0..<170 {   // ~2 min bound at 700ms spacing
+                if Task.isCancelled { return }
+                guard let self = self else { return }
+                let state = (try? await self.textTurnClient.fetchReplyState(rid: rid)) ?? (nil, false)
+                if Task.isCancelled { return }
+                if let text = state.reply, !text.isEmpty, text != lastEmitted {
+                    lastEmitted = text
+                    self.onEvent?(.replyTextPartial(text))
+                }
+                if state.final, state.reply?.isEmpty == false { return }
+                try? await Task.sleep(nanoseconds: 700_000_000)
+            }
+        }
+    }
+
     private func fetchLateReply(rid: String) {
         lateReplyTask?.cancel()
         lateReplyTask = Task { [weak self] in
@@ -1333,6 +1375,19 @@ protocol TextTurnClientProtocol {
     /// rid is unknown. Used only on the streaming path, where X-Reply-Text
     /// (→ replyText) came back empty.
     func fetchReplyText(rid: String) async throws -> String?
+
+    /// 0.2.53 text-keeps-pace: fetch the reply text plus the server's `final`
+    /// flag. During sentence-streaming the server stores partial text as each
+    /// sentence is spoken (final=false) so the app can poll mid-audio and keep
+    /// the text card in pace with the voice. Default implementation wraps
+    /// fetchReplyText with final=true (old-server / stub behavior).
+    func fetchReplyState(rid: String) async throws -> (reply: String?, final: Bool)
+}
+
+extension TextTurnClientProtocol {
+    func fetchReplyState(rid: String) async throws -> (reply: String?, final: Bool) {
+        (try await fetchReplyText(rid: rid), true)
+    }
 }
 
 struct TextTurnResult {
