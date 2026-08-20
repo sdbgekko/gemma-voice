@@ -1496,7 +1496,7 @@ final class OnDeviceConversationSession: NSObject {
         // so her onset / AEC convergence can't self-trigger). .infinity =
         // currently disarmed, so this fires exactly once per reply.
         if talkoverArmedAt == .infinity && UserDefaults.standard.bool(forKey: "aecEnabled") {
-            talkoverArmedAt = CFAbsoluteTimeGetCurrent() + 0.6
+            talkoverArmedAt = CFAbsoluteTimeGetCurrent() + 0.2   // 0.2.55c: was 0.6 — the words-gate already blocks self-trigger (her voice never transcribes), so the RMS arm guard can be minimal; early cuts now land
         }
         // Same shape as StreamingSession.scheduleTTSChunk — Kokoro emits
         // 24kHz mono int16 PCM via /text_turn just like the WS path.
