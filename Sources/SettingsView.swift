@@ -5,6 +5,7 @@ struct SettingsView: View {
     @AppStorage("earbackVolume") private var earbackVolume: Double = 0.5
     @AppStorage("useOnDeviceSTT") private var useOnDeviceSTT: Bool = true
     @AppStorage("bargeInEnabled") private var bargeInEnabled: Bool = true
+    @AppStorage("aecEnabled") private var aecEnabled: Bool = false
     @State private var onDeviceAuthResult: String? = nil
     @State private var sttTestState: STTTestState = .idle
     @State private var sttTestPartial: String = ""
@@ -45,6 +46,12 @@ struct SettingsView: View {
                 Section("Interaction") {
                     Toggle("Allow interrupting Gemma", isOn: $bargeInEnabled)
                     Text("When ON, speaking over Gemma's reply will cut her off. Currently experimental — may self-trigger from background noise.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Section("Echo cancellation (beta)") {
+                    Toggle("Echo cancellation", isOn: $aecEnabled)
+                    Text("When ON, uses Apple's hardware echo canceller so the mic can stay open while Gemma is speaking — you can talk over her or add on without the mic shutting off. Beta: if playback ever sounds silent, tinny, or garbled (especially on AirPods), turn this OFF and it reverts immediately. Takes effect on the next conversation.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

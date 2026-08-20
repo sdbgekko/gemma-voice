@@ -376,6 +376,7 @@ final class OnDeviceConversationSession: NSObject {
         case .newDeviceAvailable, .oldDeviceUnavailable, .override, .routeConfigurationChange:
             NSLog("[GemmaVoice] on-device: route change \(reasonVal) — rebuilding mic tap")
             rebuildMicTap()
+            if UserDefaults.standard.bool(forKey: "aecEnabled") { rebuildOutputGraph() }
         default:
             break
         }
@@ -385,6 +386,7 @@ final class OnDeviceConversationSession: NSObject {
         guard isRunning else { return }
         NSLog("[GemmaVoice] on-device: engine config change — rebuilding mic tap")
         rebuildMicTap()
+        if UserDefaults.standard.bool(forKey: "aecEnabled") { rebuildOutputGraph() }
     }
 
     /// Reinstall the mic tap after a route/config/interruption event. Never
@@ -413,6 +415,26 @@ final class OnDeviceConversationSession: NSObject {
         }
     }
 
+    /// Rebuild the playerNode -> mainMixer connection + ttsResampler at the
+    /// engine's CURRENT output format. Only used on the AEC (VPIO) path: enabling
+    /// voice-processing and then switching routes (speaker <-> AirPods) can
+    /// renegotiate the I/O sample format; if the output graph isn't rebuilt the
+    /// playerNode stays wired at a stale format = silent/garbled playback. Mirrors
+    /// start()'s zero-channel guard. Non-AEC path is unchanged (never calls this).
+    private func rebuildOutputGraph() {
+        playerNode.stop()
+        let candidateFormat = engine.outputNode.inputFormat(forBus: 0)
+        guard candidateFormat.channelCount > 0 else {
+            NSLog("[GemmaVoice] AEC: output rebuild skipped — zero-channel format")
+            return
+        }
+        engine.disconnectNodeOutput(playerNode)
+        engine.connect(playerNode, to: engine.mainMixerNode, format: candidateFormat)
+        self.playerConnectionFormat = candidateFormat
+        self.ttsResampler = AVAudioConverter(from: ttsFormat, to: candidateFormat)
+        NSLog("[GemmaVoice] AEC: output graph rebuilt at \(candidateFormat.sampleRate)Hz/\(candidateFormat.channelCount)ch")
+    }
+
     func start() throws {
         guard !isRunning else { return }
         sessionId = UUID().uuidString
@@ -429,6 +451,27 @@ final class OnDeviceConversationSession: NSObject {
         }
 
         engine.attach(playerNode)
+        // Echo cancellation (beta, flag-gated behind aecEnabled). Enable Apple's
+        // voice-processing I/O unit BEFORE the format reads + graph connect below:
+        // VPIO changes the I/O unit's sample format, so enabling it after the
+        // connect would leave playerNode wired at a stale format = the silent-
+        // playback regression that caused the .voiceChat rollback. The ttsResampler
+        // built from the post-VPIO connFormat (line ~445) is exactly what makes
+        // playback survive the format change. AGC is disabled so voice-processing's
+        // auto-gain can't pump the mic level and break the fixed barge-in threshold.
+        // Any failure logs and falls back to the plain .spokenAudio path (no AEC).
+        // Must be called with the engine stopped and the input node not yet in use
+        // (both true here — start() hasn't reached engine.start()).
+        if UserDefaults.standard.bool(forKey: "aecEnabled") {
+            let vp = engine.inputNode
+            do {
+                try vp.setVoiceProcessingEnabled(true)
+                vp.isVoiceProcessingAGCEnabled = false
+                NSLog("[GemmaVoice] AEC: voice processing enabled (beta)")
+            } catch {
+                NSLog("[GemmaVoice] AEC: setVoiceProcessingEnabled failed — falling back to no-AEC: \(error)")
+            }
+        }
         // v0.2.21 fix: mainMixerNode.outputFormat(forBus:0) returns a 0-channel format
         // on a freshly-activated audio session before the output graph has been built,
         // causing engine.connect to throw an uncatchable NSInvalidArgumentException

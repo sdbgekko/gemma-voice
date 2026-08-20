@@ -38,6 +38,11 @@ struct GemmaVoiceApp: App {
         // key — register true so existing installs that never touched the
         // toggle get barge-in without losing an explicit user choice.
         defaults.register(defaults: ["bargeInEnabled": true])
+        // Echo cancellation (Apple VPIO) — beta, OFF by default. When ON, the
+        // engine enables voice-processing so the mic can stay open during TTS.
+        // Default false so the shipped build behaves exactly as before until the
+        // user opts in from Settings; a regression is a one-tap revert.
+        defaults.register(defaults: ["aecEnabled": false])
 
         // Regression guard for the mute-cuts-mic-only hard rule. Asserts (traps
         // in DEBUG) if the mute contract regresses; a no-op in release builds

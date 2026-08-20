@@ -12,6 +12,13 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.52",
+            date: "Aug 20",
+            hints: [
+                "Echo cancellation — new, in beta, and OFF by default. There's a new switch in Settings called \"Echo cancellation.\" Today, while Gemma is speaking, the app has to mute your mic so it doesn't hear its own voice come back — which is why the mic shuts off once she starts replying. With this turned on, it uses Apple's built-in echo canceller to subtract Gemma's voice out of the mic, so the mic can stay open the whole time and you can talk over her or keep adding to your thought without waiting. It's off by default and completely safe to leave off; if you turn it on and anything sounds wrong (silent, tinny, or garbled — especially on AirPods), just flip it back off and it reverts instantly.",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.51",
             date: "Aug 20",
             hints: [
