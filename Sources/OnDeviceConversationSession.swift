@@ -1064,7 +1064,7 @@ final class OnDeviceConversationSession: NSObject {
             for _ in 0..<170 {   // ~2 min bound at 700ms spacing
                 if Task.isCancelled { return }
                 guard let self = self else { return }
-                let state = (try? await self.textTurnClient.fetchReplyState(rid: rid)) ?? (nil, false)
+                let state = (try? await self.textTurnClient.fetchReplyState(rid: rid)) ?? (reply: nil, final: false)
                 if Task.isCancelled { return }
                 if let text = state.reply, !text.isEmpty, text != lastEmitted {
                     lastEmitted = text
