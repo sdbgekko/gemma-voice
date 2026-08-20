@@ -174,6 +174,37 @@ final class OnDeviceConversationSession: NSObject {
         set { stateLock.lock(); _externalPlaybackActive = newValue; stateLock.unlock() }
     }
 
+    // ─── 0.2.54 talk-over-to-mute (requires AEC: aecEnabled) ───────────────
+    // While HER reply plays, the AEC-cleaned mic hears only the user — so
+    // sustained speech during playback can safely cut her voice (the text is
+    // already on the card via 0.2.53 partials). All cross-thread state is
+    // stateLock-guarded, same posture as isMuted/isProcessing above.
+    private var _talkoverArmedAt: CFAbsoluteTime = .infinity
+    /// When the render thread may begin detecting talk-over. Armed (+0.6s
+    /// grace) by the FIRST TTS chunk of a turn so her onset / AEC convergence
+    /// can't self-trigger; .infinity = disarmed. Written off-main (first
+    /// chunk) and on main (cut/finish/stop) — stateLock-guarded.
+    private var talkoverArmedAt: CFAbsoluteTime {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _talkoverArmedAt }
+        set { stateLock.lock(); _talkoverArmedAt = newValue; stateLock.unlock() }
+    }
+    private var _talkoverCut = false
+    /// True once the user cut THIS reply — scheduleTTSChunk (called off-main
+    /// from onAudioChunk) drops the remaining audio chunks. Reset at send.
+    private var talkoverCut: Bool {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _talkoverCut }
+        set { stateLock.lock(); _talkoverCut = newValue; stateLock.unlock() }
+    }
+    /// Consecutive loud mic callbacks during playback. RENDER-THREAD-LOCAL
+    /// (only touched inside handleMicBuffer's gated branch; tap callbacks are
+    /// serial) — no lock needed, same posture as the tap's own accumulators.
+    private var talkoverStreak = 0
+    /// RMS bar the AEC-cleaned mic must clear (~ StreamingSession's proven
+    /// barge-in threshold) and how many consecutive ~85ms callbacks (2 ≈
+    /// 170ms of sustained speech — a cough usually fails the streak).
+    private let talkoverThreshold: Float = 0.04
+    private let talkoverStreakToFire = 2
+
     // MARK: Utterance continuation (0.2.29)
     //
     // Sherman pauses mid-thought; the silence gate cuts and sends, so his
@@ -520,6 +551,7 @@ final class OnDeviceConversationSession: NSObject {
         pendingTurnText = ""
         pendingTurnAudio = []
         ttsStartedThisTurn = false
+        talkoverArmedAt = .infinity   // 0.2.54: disarm the talk-over detector
         isProcessing = false
         micHotAfter = .distantPast
         engine.inputNode.removeTap(onBus: 0)
@@ -566,6 +598,7 @@ final class OnDeviceConversationSession: NSObject {
         pendingTurnText = ""
         pendingTurnAudio = []
         ttsStartedThisTurn = false
+        talkoverArmedAt = .infinity   // 0.2.54: disarm the talk-over detector
         // Stop this turn's TTS and release the half-duplex gate so the mic
         // reopens immediately (a no-op if nothing was playing).
         playerNode.stop()
@@ -742,9 +775,19 @@ final class OnDeviceConversationSession: NSObject {
 
     private func handleMicBuffer(_ buffer: AVAudioPCMBuffer) {
         if isMuted || isProcessing || externalPlaybackActive {
+            // 0.2.54 talk-over: while her reply plays (isProcessing) with the
+            // detector armed, the AEC-cleaned mic hears only the user — run
+            // cheap RMS detection on the gated frames instead of pure dropping.
+            // Never while muted (mute stays absolute).
+            if !isMuted && isProcessing && CFAbsoluteTimeGetCurrent() >= talkoverArmedAt {
+                detectTalkover(buffer)
+            } else {
+                talkoverStreak = 0
+            }
             DispatchQueue.main.async { [weak self] in self?.onEvent?(.level(0)) }
             return
         }
+        talkoverStreak = 0
         // Earback-tone guard: right after a send the mic is kept hot for the
         // continuation window, but the local "got it" tone plays in that same
         // instant — swallow input briefly so it can't self-trigger a resume.
@@ -938,6 +981,7 @@ final class OnDeviceConversationSession: NSObject {
     private func sendTurn(text: String) {
         setGraceActive(true)
         ttsStartedThisTurn = false
+        talkoverCut = false           // 0.2.54: new turn — its reply may play
         isProcessing = false
         // Keep the mic hot from here, but swallow the earback tone that plays in
         // this same instant so it can't self-trigger a continuation.
@@ -1134,6 +1178,50 @@ final class OnDeviceConversationSession: NSObject {
         isProcessing = true
     }
 
+    /// 0.2.54: RMS-streak talk-over detector, called on the RENDER thread for
+    /// gated frames while her reply plays. Two consecutive loud callbacks
+    /// (~170ms of sustained speech on the echo-cancelled mic) fire the cut on
+    /// the main actor. Raw hw-format samples are fine for RMS.
+    private func detectTalkover(_ buffer: AVAudioPCMBuffer) {
+        guard let ch = buffer.floatChannelData?[0] else { return }
+        let n = Int(buffer.frameLength)
+        guard n > 0 else { return }
+        var sumSq: Float = 0
+        for i in 0..<n { sumSq += ch[i] * ch[i] }
+        let rms = sqrt(sumSq / Float(n))
+        if rms >= talkoverThreshold {
+            talkoverStreak += 1
+            if talkoverStreak >= talkoverStreakToFire {
+                talkoverStreak = 0
+                Task { @MainActor [weak self] in self?.performTalkoverCut() }
+            }
+        } else {
+            talkoverStreak = 0
+        }
+    }
+
+    /// 0.2.54: the user talked over her — cut the voice, keep the words.
+    /// Stops playback + drops the reply's remaining audio; the card's text is
+    /// already on screen (0.2.53 partials, which run a beat AHEAD of the
+    /// voice) and the live poll still backfills the final text. The mic
+    /// reopens via the normal finishTurn drain release, so the user's ongoing
+    /// speech becomes the next utterance.
+    private func performTalkoverCut() {
+        guard isProcessing, playerNode.isPlaying, !talkoverCut else { return }
+        talkoverCut = true
+        talkoverArmedAt = .infinity
+        NSLog("[GemmaVoice] talk-over: user spoke over reply — cutting TTS, keeping text")
+        inFlightTurnTask?.cancel()      // stop draining the reply's audio body
+        playerNode.stop()
+        playerNode.reset()
+        PendingTurnStore.clear()        // reply delivered (text on card) — nothing to redeliver
+        onEvent?(.ttsEnd)               // card → answered; status → listening
+        finishTurn()
+        // Brief mic-hot guard so the cut's own click/tail can't leak into the
+        // next utterance's first frames.
+        micHotAfter = Date().addingTimeInterval(0.25)
+    }
+
     /// Reply audio has started — close the window and go half-duplex for the
     /// duration of playback. Idempotent. Abandons any half-captured resume
     /// (rare: reply beat a mid-continuation utterance to the finish line).
@@ -1155,6 +1243,9 @@ final class OnDeviceConversationSession: NSObject {
         pendingTurnText = ""
         pendingTurnAudio = []
         ttsStartedThisTurn = false
+        talkoverArmedAt = .infinity   // 0.2.54: disarm; talkoverCut deliberately
+                                      // NOT reset here — late chunks of a cut
+                                      // reply must stay dropped (sendTurn resets)
         releaseProcessingAfterDrain()
     }
 
@@ -1294,6 +1385,16 @@ final class OnDeviceConversationSession: NSObject {
     // MARK: - TTS playback
 
     private func scheduleTTSChunk(_ data: Data) {
+        // 0.2.54 talk-over: the user cut this reply — drop its remaining audio
+        // (the request may still be draining chunks; playing them would
+        // restart her voice mid-cut). stateLock-guarded, off-main-safe.
+        if talkoverCut { return }
+        // Arm the talk-over detector on the FIRST chunk of a turn (+0.6s grace
+        // so her onset / AEC convergence can't self-trigger). .infinity =
+        // currently disarmed, so this fires exactly once per reply.
+        if talkoverArmedAt == .infinity && UserDefaults.standard.bool(forKey: "aecEnabled") {
+            talkoverArmedAt = CFAbsoluteTimeGetCurrent() + 0.6
+        }
         // Same shape as StreamingSession.scheduleTTSChunk — Kokoro emits
         // 24kHz mono int16 PCM via /text_turn just like the WS path.
         let frameCount = AVAudioFrameCount(data.count / 2)
