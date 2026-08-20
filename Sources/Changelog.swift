@@ -12,6 +12,13 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.51",
+            date: "Aug 20",
+            hints: [
+                "Fixed a case where speech-to-text could silently hang a turn. If the on-device recognizer ended without a final result — a clean cancel, or you went quiet without saying anything — the app was left waiting on a callback that never arrived, so the turn just sat there unfinished. All three recognition paths now always resolve, so a turn can't get stuck that way. (Caught on night one of the automated Jarvis + Kai code reviews.)",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.50",
             date: "Aug 19",
             hints: [

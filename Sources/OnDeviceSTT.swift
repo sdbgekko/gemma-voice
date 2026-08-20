@@ -144,7 +144,13 @@ final class OnDeviceSTT {
                 completion(.failure(.recognitionFailed(error.localizedDescription)))
                 return
             }
-            guard let result else { return }
+            guard let result else {
+                // Terminal callback with nil result + nil error = task ended
+                // without a final (clean cancel / no speech). Fire once so the
+                // caller never hangs waiting on a completion that won't come.
+                if !finished { finished = true; completion(.failure(.emptyResult)) }
+                return
+            }
             if result.isFinal {
                 finished = true
                 let text = result.bestTranscription.formattedString
@@ -235,6 +241,13 @@ final class OnDeviceSTT {
                 onFinal(.failure(.recognitionFailed(error.localizedDescription)))
                 self.cleanupLive()
             }
+            // Terminal callback with nil result + nil error = task ended without a
+            // final (clean cancel / no speech). Fire once so onFinal always resolves.
+            if result == nil && error == nil && !settled {
+                settled = true
+                onFinal(.failure(.emptyResult))
+                self.cleanupLive()
+            }
         }
     }
 
@@ -311,6 +324,12 @@ final class OnDeviceSTT {
                 if settled { return }
                 settled = true
                 onFinal(.failure(.recognitionFailed(error.localizedDescription)))
+            }
+            // Terminal callback with nil result + nil error = task ended without a
+            // final; fire once so onFinal always resolves and the turn can't hang.
+            if result == nil && error == nil && !settled {
+                settled = true
+                onFinal(.failure(.emptyResult))
             }
         }
         streamLock.lock()

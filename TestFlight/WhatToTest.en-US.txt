@@ -1,7 +1,5 @@
-0.2.50 — Mic reliability fixes
+0.2.51 — STT hang fix
 
-Two fixes under the hood:
-1) The mic could occasionally go "deaf" — stop hearing you — after a phone call, Siri, or switching away mid-reply, until you restarted the app. Fixed with a watchdog that always reopens the mic.
-2) A rare crash when connecting/disconnecting AirPods or headphones while talking. Fixed.
+Fixes a case where the on-device speech-to-text could silently hang a turn: if the recognizer ended without a final result (a clean cancel or no speech detected), the app was left waiting on a callback that never came, so the turn never completed. Now it always resolves.
 
-Please test: (a) talk to Gemma, trigger Siri or take a call while she's replying, come back, and confirm she still hears you ("can you hear me?"). (b) Connect/disconnect AirPods a few times mid-conversation — no crash, mic keeps working.
+Please test: normal conversation should work as before. Specifically try: start speaking then go silent immediately (no words), or cancel mid-utterance — the turn should end cleanly and the mic should be ready again, never stuck.
