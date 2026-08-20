@@ -12,6 +12,13 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.55",
+            date: "Aug 20",
+            hints: [
+                "Talking over Gemma now only cuts her voice when you say actual words — Sherman's design, after a throat-clear false-triggered the cut. A loud sound wakes the speech recognizer for about a second and a half; only a transcribed word fires the cut, so coughs, throat-clears, and bumps stand down silently and she keeps talking. Real interruptions feel about a quarter-second slower — that's the recognizer confirming you actually spoke.",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.54",
             date: "Aug 20",
             hints: [
