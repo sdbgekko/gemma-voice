@@ -12,6 +12,13 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.54",
+            date: "Aug 20",
+            hints: [
+                "Talk over Gemma to cut her voice — the feature the last three builds were building toward. With Echo cancellation ON, just start talking while she's speaking: her voice stops almost instantly, the reply text stays on screen so you can finish reading what she was saying (it runs a beat ahead of her voice), and your words become your next turn. It takes about a sixth of a second of sustained speech to trigger, so a cough or a bump shouldn't cut her off, and there's a short guard at the start of each reply so her own voice can't trigger it. With Echo cancellation OFF, nothing changes.",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.53",
             date: "Aug 20",
             hints: [

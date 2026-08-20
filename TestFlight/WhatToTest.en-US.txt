@@ -1,5 +1,9 @@
-0.2.53 — Text keeps pace with the voice
+0.2.54 — Talk over Gemma to cut her voice (needs Echo cancellation ON)
 
-The reply text now streams into the card sentence-by-sentence WHILE Gemma is speaking, instead of dumping in after the whole reply finished (previously a 30s+ text delay on long replies).
+With "Echo cancellation (beta)" ON in Settings: while Gemma's voice is playing, just start talking. Her voice should stop within a fraction of a second, the reply TEXT stays on screen for you to finish reading, and what you said becomes your next turn.
 
-Please test: ask something that gets a long answer. The text bubble should start filling within a second or two of her voice starting, and grow roughly in step with what she's saying. Confirm: no duplicate bubbles, and the final text matches what she said.
+Please test (Echo cancellation ON, restart app after enabling):
+1. Ask something long; talk over her mid-reply — her voice cuts fast, text stays, your words get answered next.
+2. Stay quiet through a full reply — she should NOT cut herself off (no false triggers from her own voice or room noise).
+3. A short cough/bump mid-reply ideally should NOT cut her (needs ~170ms of sustained speech).
+With Echo cancellation OFF, everything behaves exactly like 0.2.53.
