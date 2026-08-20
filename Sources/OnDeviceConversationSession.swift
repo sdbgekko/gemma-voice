@@ -855,11 +855,9 @@ final class OnDeviceConversationSession: NSObject {
             if isSpeech {
                 if !inSpeech {
                     inSpeech = true
-                    // 0.2.54 fix: universal yield — if her audio is still
-                    // draining (the tail past the 2s processing release, where
-                    // the talk-over detector is off duty), the user's speech
-                    // onset cuts the voice. AEC-gated inside the hop.
-                    Task { @MainActor [weak self] in self?.yieldPlaybackToUser() }
+                    // 0.2.55b: the tail-window yield moved from ONSET (pure
+                    // loudness — a sharp breath false-triggered it) to the
+                    // first transcribed WORD, in beginStreaming's onPartial.
                     // Spin up the live recognizer at speech onset so THIS
                     // utterance is transcribed as it arrives. The current `out`
                     // buffer (fed below) carries the onset, so no lead-in drop.
@@ -1396,7 +1394,16 @@ final class OnDeviceConversationSession: NSObject {
         }
         let ok = OnDeviceSTT.shared.startStreaming(
             onPartial: { [weak self] text in
-                Task { @MainActor in self?.latestPartial = text }
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.latestPartial = text
+                    // 0.2.55b: words-gated tail yield — the recognizer heard an
+                    // actual word while her audio is still draining: cut it.
+                    // (yieldPlaybackToUser no-ops unless AEC on + player playing.)
+                    if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        self.yieldPlaybackToUser()
+                    }
+                }
             },
             onFinal: { [weak self] result in
                 Task { @MainActor in self?.deliverStreamingFinal(result) }
