@@ -1,5 +1,11 @@
-0.2.51 — STT hang fix
+0.2.52 — Echo cancellation (BETA, off by default)
 
-Fixes a case where the on-device speech-to-text could silently hang a turn: if the recognizer ended without a final result (a clean cancel or no speech detected), the app was left waiting on a callback that never came, so the turn never completed. Now it always resolves.
+New Settings toggle: "Echo cancellation (beta)". OFF by default — the app behaves exactly as 0.2.51 until you turn it on. When ON, it uses Apple's hardware echo canceller so the mic can stay open while Gemma is speaking (talk over her / add on without the mic shutting off).
 
-Please test: normal conversation should work as before. Specifically try: start speaking then go silent immediately (no words), or cancel mid-utterance — the turn should end cleanly and the mic should be ready again, never stuck.
+Please test (flip it ON in Settings, then):
+1. On SPEAKER: play a reply — audio must NOT be silent, tinny, or garbled.
+2. Talk over Gemma while she's speaking — she should hear you cleanly (no echo of her own voice coming back as your words).
+3. Connect/disconnect AirPods mid-conversation — playback should keep working (not go silent), and Gemma should still sound full-quality on AirPods.
+4. Flip it OFF — should revert instantly to normal behavior.
+
+If anything sounds wrong at any step, just turn the toggle OFF — it reverts immediately, no reinstall needed. Report what you heard.

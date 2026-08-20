@@ -376,6 +376,7 @@ final class OnDeviceConversationSession: NSObject {
         case .newDeviceAvailable, .oldDeviceUnavailable, .override, .routeConfigurationChange:
             NSLog("[GemmaVoice] on-device: route change \(reasonVal) — rebuilding mic tap")
             rebuildMicTap()
+            if UserDefaults.standard.bool(forKey: "aecEnabled") { rebuildOutputGraph() }
         default:
             break
         }
@@ -385,6 +386,7 @@ final class OnDeviceConversationSession: NSObject {
         guard isRunning else { return }
         NSLog("[GemmaVoice] on-device: engine config change — rebuilding mic tap")
         rebuildMicTap()
+        if UserDefaults.standard.bool(forKey: "aecEnabled") { rebuildOutputGraph() }
     }
 
     /// Reinstall the mic tap after a route/config/interruption event. Never
@@ -411,6 +413,26 @@ final class OnDeviceConversationSession: NSObject {
             engine.prepare()
             try? engine.start()
         }
+    }
+
+    /// Rebuild the playerNode -> mainMixer connection + ttsResampler at the
+    /// engine's CURRENT output format. Only used on the AEC (VPIO) path: enabling
+    /// voice-processing and then switching routes (speaker <-> AirPods) can
+    /// renegotiate the I/O sample format; if the output graph isn't rebuilt the
+    /// playerNode stays wired at a stale format = silent/garbled playback. Mirrors
+    /// start()'s zero-channel guard. Non-AEC path is unchanged (never calls this).
+    private func rebuildOutputGraph() {
+        playerNode.stop()
+        let candidateFormat = engine.outputNode.inputFormat(forBus: 0)
+        guard candidateFormat.channelCount > 0 else {
+            NSLog("[GemmaVoice] AEC: output rebuild skipped — zero-channel format")
+            return
+        }
+        engine.disconnectNodeOutput(playerNode)
+        engine.connect(playerNode, to: engine.mainMixerNode, format: candidateFormat)
+        self.playerConnectionFormat = candidateFormat
+        self.ttsResampler = AVAudioConverter(from: ttsFormat, to: candidateFormat)
+        NSLog("[GemmaVoice] AEC: output graph rebuilt at \(candidateFormat.sampleRate)Hz/\(candidateFormat.channelCount)ch")
     }
 
     func start() throws {
