@@ -1,9 +1,5 @@
-0.2.54 — Talk over Gemma to cut her voice (needs Echo cancellation ON)
+0.2.55 — Words-gated cut (no more cough false-triggers)
 
-With "Echo cancellation (beta)" ON in Settings: while Gemma's voice is playing, just start talking. Her voice should stop within a fraction of a second, the reply TEXT stays on screen for you to finish reading, and what you said becomes your next turn.
+Talking over Gemma now only cuts her voice when you say actual WORDS. Loud sounds wake the recognizer; only a transcribed word fires the cut — so coughs, throat-clears, and bumps stand down silently (~1.5s window).
 
-Please test (Echo cancellation ON, restart app after enabling):
-1. Ask something long; talk over her mid-reply — her voice cuts fast, text stays, your words get answered next.
-2. Stay quiet through a full reply — she should NOT cut herself off (no false triggers from her own voice or room noise).
-3. A short cough/bump mid-reply ideally should NOT cut her (needs ~170ms of sustained speech).
-With Echo cancellation OFF, everything behaves exactly like 0.2.53.
+Test (Echo cancellation ON): 1) Talk over her — voice cuts (may feel ~a quarter-second slower than before; that's the word confirmation). 2) Cough/clear your throat mid-reply — she should keep talking. 3) Normal conversation unchanged.

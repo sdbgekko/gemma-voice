@@ -204,6 +204,20 @@ final class OnDeviceConversationSession: NSObject {
     /// 170ms of sustained speech — a cough usually fails the streak).
     private let talkoverThreshold: Float = 0.02  // AEC/NS-processed mic runs quiet; 0.04 missed casual speech
     private let talkoverStreakToFire = 2
+    // 0.2.55 words-gated cut (Sherman's design, after a throat-clear false-
+    // triggered the pure-RMS cut): the RMS streak only WAKES a short
+    // confirmation window; the cut fires ONLY when the recognizer produces an
+    // actual word. Coughs/throat-clears transcribe to nothing -> stand down.
+    private var _talkoverConfirming = false
+    private var talkoverConfirming: Bool {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _talkoverConfirming }
+        set { stateLock.lock(); _talkoverConfirming = newValue; stateLock.unlock() }
+    }
+    private var _talkoverConfirmUntil: CFAbsoluteTime = 0
+    private var talkoverConfirmUntil: CFAbsoluteTime {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _talkoverConfirmUntil }
+        set { stateLock.lock(); _talkoverConfirmUntil = newValue; stateLock.unlock() }
+    }
 
     // MARK: Utterance continuation (0.2.29)
     //
@@ -552,6 +566,7 @@ final class OnDeviceConversationSession: NSObject {
         pendingTurnAudio = []
         ttsStartedThisTurn = false
         talkoverArmedAt = .infinity   // 0.2.54: disarm the talk-over detector
+        if talkoverConfirming { endTalkoverConfirm(cut: false) }
         isProcessing = false
         micHotAfter = .distantPast
         engine.inputNode.removeTap(onBus: 0)
@@ -599,6 +614,7 @@ final class OnDeviceConversationSession: NSObject {
         pendingTurnAudio = []
         ttsStartedThisTurn = false
         talkoverArmedAt = .infinity   // 0.2.54: disarm the talk-over detector
+        if talkoverConfirming { endTalkoverConfirm(cut: false) }
         // Stop this turn's TTS and release the half-duplex gate so the mic
         // reopens immediately (a no-op if nothing was playing).
         playerNode.stop()
@@ -780,7 +796,11 @@ final class OnDeviceConversationSession: NSObject {
             // cheap RMS detection on the gated frames instead of pure dropping.
             // Never while muted (mute stays absolute).
             if !isMuted && isProcessing && CFAbsoluteTimeGetCurrent() >= talkoverArmedAt {
-                detectTalkover(buffer)
+                if talkoverConfirming {
+                    feedTalkoverConfirm(buffer)   // 0.2.55: recognizer decides
+                } else {
+                    detectTalkover(buffer)
+                }
             } else {
                 talkoverStreak = 0
             }
@@ -1201,7 +1221,8 @@ final class OnDeviceConversationSession: NSObject {
             talkoverStreak += 1
             if talkoverStreak >= talkoverStreakToFire {
                 talkoverStreak = 0
-                Task { @MainActor [weak self] in self?.performTalkoverCut() }
+                // 0.2.55: loudness no longer cuts — it wakes the recognizer.
+                Task { @MainActor [weak self] in self?.beginTalkoverConfirm() }
             }
         } else {
             talkoverStreak = 0
@@ -1218,6 +1239,60 @@ final class OnDeviceConversationSession: NSObject {
         talkoverCut = true            // drop any still-arriving chunks of that reply
         playerNode.stop()
         playerNode.reset()
+    }
+
+    /// 0.2.55: feed gated frames to the confirmation recognizer (RENDER
+    /// thread) — converted hw -> 16k capture format like the normal path. On
+    /// window expiry with no words, stand down quietly.
+    private func feedTalkoverConfirm(_ buffer: AVAudioPCMBuffer) {
+        if CFAbsoluteTimeGetCurrent() > talkoverConfirmUntil {
+            Task { @MainActor [weak self] in self?.endTalkoverConfirm(cut: false) }
+            return
+        }
+        guard let conv = converter else { return }
+        let ratio = captureFormat.sampleRate / buffer.format.sampleRate
+        let cap = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 1024
+        guard let out = AVAudioPCMBuffer(pcmFormat: captureFormat, frameCapacity: cap) else { return }
+        var err: NSError?
+        var consumed = false
+        let st = conv.convert(to: out, error: &err) { _, inputStatus in
+            if consumed { inputStatus.pointee = .noDataNow; return nil }
+            consumed = true
+            inputStatus.pointee = .haveData
+            return buffer
+        }
+        if st == .error || err != nil { return }
+        OnDeviceSTT.shared.appendStreaming(out)
+    }
+
+    /// 0.2.55: loudness woke us — open a ~1.5s window in which only actual
+    /// WORDS from the recognizer cut her voice.
+    private func beginTalkoverConfirm() {
+        guard !talkoverConfirming, isProcessing, playerNode.isPlaying, !talkoverCut else { return }
+        NSLog("[GemmaVoice] talk-over: loud input — confirming with recognizer")
+        talkoverConfirmUntil = CFAbsoluteTimeGetCurrent() + 1.5
+        talkoverConfirming = true
+        _ = OnDeviceSTT.shared.startStreaming(
+            onPartial: { [weak self] text in
+                guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+                Task { @MainActor [weak self] in self?.endTalkoverConfirm(cut: true) }
+            },
+            onFinal: { _ in }
+        )
+    }
+
+    /// 0.2.55: close the confirmation window — cut (words heard) or quiet
+    /// stand-down (cough/throat-clear: nothing transcribed).
+    private func endTalkoverConfirm(cut: Bool) {
+        guard talkoverConfirming else { return }
+        talkoverConfirming = false
+        OnDeviceSTT.shared.cancelStreaming()
+        if cut {
+            NSLog("[GemmaVoice] talk-over: words confirmed — cutting")
+            performTalkoverCut()
+        } else {
+            NSLog("[GemmaVoice] talk-over: no words in window — standing down")
+        }
     }
 
     /// 0.2.54: the user talked over her — cut the voice, keep the words.
@@ -1263,6 +1338,7 @@ final class OnDeviceConversationSession: NSObject {
         pendingTurnText = ""
         pendingTurnAudio = []
         ttsStartedThisTurn = false
+        if talkoverConfirming { endTalkoverConfirm(cut: false) }
         talkoverArmedAt = .infinity   // 0.2.54: disarm; talkoverCut deliberately
                                       // NOT reset here — late chunks of a cut
                                       // reply must stay dropped (sendTurn resets)
