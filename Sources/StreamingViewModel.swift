@@ -1028,7 +1028,15 @@ final class StreamingViewModel: ObservableObject {
             // 0.2.54 fix (Sherman): a no-speech drop gets NO card and NO
             // banner — remove the dangling pending card and resume quietly.
             if reason == "no-speech" {
-                if let i = latestPendingIndex { ledger.remove(at: i) }
+                // Only remove an EMPTY SHELL card (no user text, no reply) that
+                // this no-speech capture itself created. A cough right after a
+                // real utterance has no card of its own — blind removal deleted
+                // the real in-flight turn's card (Sherman: "the text
+                // disappeared"). A real card survives; status self-corrects on
+                // the turn's next event.
+                if let i = latestPendingIndex, ledger[i].youText.isEmpty, ledger[i].reply == nil {
+                    ledger.remove(at: i)
+                }
                 endKeepalive()
                 status = userMuted ? .muted : .listening
                 break
