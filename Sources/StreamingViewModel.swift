@@ -995,23 +995,26 @@ final class StreamingViewModel: ObservableObject {
             if !userMuted { status = .playing }
         case .replyTextPartial(let text):
             // 0.2.53 text-keeps-pace: the reply text as it grows DURING the
-            // audio. Update the open card in place — ledgerSetReply targets the
-            // pending card, so repeated partials can never mint a second
-            // bubble. No appendTurn here (the transcript row lands once, from
-            // .replyTextLate at the end); no status change (audio is playing
-            // and already drives status).
+            // audio. ledgerKeepPaceReply updates the open card in place — or,
+            // when a late tick lands just AFTER ttsEnd answered the card, the
+            // newest answered card — and NEVER synthesizes a new card (the
+            // ledgerSetReply fallback minted a ghost reply-only card when the
+            // final sentence's text arrived post-answer; Sherman caught it on
+            // device). No appendTurn (transcript row lands once via
+            // .replyTextLate); no status change.
             if !text.isEmpty {
-                ledgerSetReply(text, source: "gemma")
+                ledgerKeepPaceReply(text)
             }
         case .replyTextLate(let text):
             // Streaming path: reply text arrived after the audio (and after
             // ttsEnd already moved the card to .answered). Backfill the card's
-            // Gemma text without touching status/phase. (When 0.2.53 partials
-            // already filled the card, ledgerBackfillReply no-ops harmlessly —
-            // this case then just appends the transcript row.)
+            // Gemma text without touching status/phase. ledgerKeepPaceReply
+            // (not ledgerBackfillReply) so a card 0.2.53 partials already
+            // partially filled still gets the FINAL text — backfill's
+            // reply==nil guard skipped it, leaving the last sentence missing.
             if !text.isEmpty {
                 appendTurn(text: text, isGemma: true, source: "gemma", speaker: nil)
-                ledgerBackfillReply(text)
+                ledgerKeepPaceReply(text)
             }
         case .ttsEnd:
             ledgerAnswered()
@@ -1267,17 +1270,27 @@ final class StreamingViewModel: ObservableObject {
         ledger[i].answeredAt = Date()
     }
 
-    /// Streaming path (0.2.32): fill the reply on an already-.answered card.
-    /// The streaming turn had no reply text at ttsEnd, so the card reached
-    /// .answered with reply == nil; latestPendingIndex (which skips terminal
-    /// phases) can't see it. Target the newest answered card still missing its
-    /// reply — strictly serial, so that's the turn whose audio just finished.
-    private func ledgerBackfillReply(_ text: String) {
-        guard let i = ledger.lastIndex(where: { turn in
-            turn.phase == .answered && turn.reply == nil
-        }) else { return }
-        ledger[i].reply = text
-        ledger[i].source = "gemma"
+    /// 0.2.53 text-keeps-pace: update a reply IN PLACE and never mint a card.
+    /// Targets the open (pending) card first; when a poll tick lands just after
+    /// ttsEnd answered the card, falls back to the newest ANSWERED card so the
+    /// final sentence still lands. A partial can only ever GROW the text it
+    /// wrote (guard against a stale/older tick shrinking it). If neither card
+    /// exists the text is dropped — synthesizing here is what minted the ghost
+    /// reply-only card (caught on device 2026-08-20).
+    private func ledgerKeepPaceReply(_ text: String) {
+        if let i = latestPendingIndex {
+            ledger[i].reply = text
+            ledger[i].source = ledger[i].source ?? "gemma"
+            ledger[i].phase = .speaking
+            return
+        }
+        if let i = ledger.lastIndex(where: { $0.phase == .answered }) {
+            let existing = ledger[i].reply ?? ""
+            if text.count >= existing.count {
+                ledger[i].reply = text
+                ledger[i].source = ledger[i].source ?? "gemma"
+            }
+        }
     }
 
     private func ledgerDropped(_ reason: String) {
