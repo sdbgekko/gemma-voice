@@ -205,14 +205,29 @@ struct ContentView: View {
 
     private var dock: some View {
         VStack(spacing: 10) {
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(statusColor)
-                    .frame(width: 10, height: 10)
+            // Glanceable state orb (T1, 0.2.56): a large, cupholder-readable
+            // indicator so listening / thinking / speaking is obvious at a
+            // glance without reading the pill. Big colored disc + the state's
+            // SF Symbol + a bigger label. Uses the existing Status.icon +
+            // statusColor — purely additive, no audio/pipeline change.
+            VStack(spacing: 8) {
+                ZStack {
+                    Circle()
+                        .fill(statusColor.opacity(0.18))
+                        .frame(width: 96, height: 96)
+                    Circle()
+                        .fill(statusColor)
+                        .frame(width: 68, height: 68)
+                    Image(systemName: viewModel.status.sfSymbol)
+                        .font(.system(size: 30, weight: .semibold))
+                        .foregroundColor(.white)
+                }
                 Text(statusLabel)
-                    .font(.subheadline)
+                    .font(.headline)
                     .foregroundColor(.secondary)
             }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(statusLabel)
             WaveformView(
                 samples: viewModel.levelHistory,
                 active: viewModel.status == .speaking_ || viewModel.status == .playing
