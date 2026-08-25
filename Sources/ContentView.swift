@@ -17,6 +17,7 @@ struct ContentView: View {
     /// 0.2.47: the attach button became a menu (Photo Library / Paste Image),
     /// so the picker now presents via this flag instead of a bare PhotosPicker.
     @State private var showPhotoPicker = false
+    @State private var glancePulse = false   // 0.2.57: drives the status-orb breathing
 
     private var preferredScheme: ColorScheme? {
         switch appearance {
@@ -212,16 +213,25 @@ struct ContentView: View {
             // statusColor — purely additive, no audio/pipeline change.
             VStack(spacing: 8) {
                 ZStack {
+                    // Outer halo breathes (0.2.57) so a listening/thinking wait
+                    // reads as ALIVE, not a frozen app — the 2.1s gap was the
+                    // felt "dead" moment. Continuous gentle scale + fade.
                     Circle()
                         .fill(statusColor.opacity(0.18))
                         .frame(width: 96, height: 96)
+                        .scaleEffect(glancePulse ? 1.10 : 0.92)
+                        .opacity(glancePulse ? 0.9 : 0.45)
+                        .animation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true), value: glancePulse)
                     Circle()
                         .fill(statusColor)
                         .frame(width: 68, height: 68)
+                        .shadow(color: statusColor.opacity(0.45), radius: 10)
                     Image(systemName: viewModel.status.sfSymbol)
                         .font(.system(size: 30, weight: .semibold))
                         .foregroundColor(.white)
+                        .contentTransition(.symbolEffect(.replace))
                 }
+                .onAppear { glancePulse = true }
                 Text(statusLabel)
                     .font(.headline)
                     .foregroundColor(.secondary)

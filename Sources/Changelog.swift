@@ -12,6 +12,13 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.57",
+            date: "Aug 25",
+            hints: [
+                "The status orb is now alive: it gently breathes while she's listening or thinking, and the icon smoothly morphs between states (ear → dots → speaker). The point is the ~2-second wait after you speak no longer looks like a frozen app — you can see at a glance she's awake and working, even from a cupholder.",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.56",
             date: "Aug 25",
             hints: [
