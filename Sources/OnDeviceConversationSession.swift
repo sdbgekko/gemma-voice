@@ -117,9 +117,11 @@ final class OnDeviceConversationSession: NSObject {
     /// still slip past the gate by merging the resumed speech into the same
     /// turn instead of starting a disconnected new one.
     private let silenceFramesToCut = 20
-    /// Minimum utterance length, also in 32ms frames. 15 = 480ms (matches
-    /// server MIN_UTTERANCE_FRAMES).
-    private let minUtteranceFrames = 15
+    /// Minimum utterance length, in 32ms frames. 8 = 256ms — matches the
+    /// server's VOICE_MIN_UTTERANCE_FRAMES=8 so single words ("hello", "hi",
+    /// "yes") register. Was 15 (480ms), which silently dropped one-word turns
+    /// (the "I said hello and nothing happened" bug, Sherman 0.2.58).
+    private let minUtteranceFrames = 8
     /// Hard cap so a runaway buffer doesn't grow unbounded. ~30s.
     private let maxUtteranceFrames = 30_000 / 32
     private let frameSize: AVAudioFrameCount = 512

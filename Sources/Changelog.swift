@@ -12,6 +12,13 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.58",
+            date: "Aug 25",
+            hints: [
+                "Fixed: one-word turns now register. Saying just 'hello', 'hi', or 'yes' was being silently dropped — the app was requiring about half a second of speech before it would send anything, while the server had already been lowered to accept about a quarter second. They were out of sync. Now they match (256ms), so a single word goes through instead of nothing happening.",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.57",
             date: "Aug 25",
             hints: [
