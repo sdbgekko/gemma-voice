@@ -26,6 +26,9 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
     private let url: URL
     private let engine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
+    /// 0.2.59 jitter buffer (see OnDeviceConversationSession twin).
+    private var ttsPrebufferedSec: Double = 0
+    private var ttsPrebufferDeadline: CFAbsoluteTime = 0
     private var webSocket: URLSessionWebSocketTask?
     private var urlSession: URLSession!
     /// True after stop() invalidated urlSession (A1: URLSession retains its
@@ -939,8 +942,27 @@ final class StreamingSession: NSObject, URLSessionWebSocketDelegate {
             NSLog("[GemmaVoice] dropping TTS chunk — engine down, not latching gate")
             return
         }
+        // 0.2.59 jitter buffer: queue ~220ms before starting the render clock
+        // (350ms failsafe). Underruns read as a sibilant "S" on word endings.
         if !playerNode.isPlaying {
-            playerNode.play()
+            let dur = Double(bufferToSchedule.frameLength) / bufferToSchedule.format.sampleRate
+            let now = CFAbsoluteTimeGetCurrent()
+            if ttsPrebufferDeadline == 0 {
+                ttsPrebufferDeadline = now + 0.35
+                ttsPrebufferedSec = 0
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.36) { [weak self] in
+                    guard let self = self else { return }
+                    if !self.playerNode.isPlaying, self.ttsPrebufferDeadline != 0 {
+                        self.playerNode.play()
+                        self.ttsPrebufferDeadline = 0
+                    }
+                }
+            }
+            ttsPrebufferedSec += dur
+            if ttsPrebufferedSec >= 0.22 || now >= ttsPrebufferDeadline {
+                playerNode.play()
+                ttsPrebufferDeadline = 0
+            }
         }
         // P0-2: count outstanding buffers so isTTSPlaying stays true until
         // playback actually DRAINS (mirrors OnDeviceConversationSession's

@@ -12,6 +12,13 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.59",
+            date: "Aug 26",
+            hints: [
+                "Fixed the phantom 'S' at the ends of words (\"Sherman\" sounding like \"Shermans\"). It wasn't the voice — it was playback running dry for a split second when a network chunk arrived late (worst on cellular), and that tiny gap sounds like a hiss. The app now queues about a quarter-second of audio before starting to speak, so late chunks can't leave the player empty. Costs ~0.2s of first-audio, kills the artifact.",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.58",
             date: "Aug 25",
             hints: [

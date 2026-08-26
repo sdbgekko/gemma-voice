@@ -61,6 +61,12 @@ final class OnDeviceConversationSession: NSObject {
     // Audio I/O
     private let engine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
+    /// 0.2.59 jitter buffer: seconds of TTS audio scheduled before the player
+    /// was started this turn, and the wall-clock failsafe deadline. Underrun
+    /// discontinuities (late network chunk -> player runs dry mid-word) were
+    /// audible as a sibilant "S" on sentence-final words, worst on cellular.
+    private var ttsPrebufferedSec: Double = 0
+    private var ttsPrebufferDeadline: CFAbsoluteTime = 0
     private let captureFormat: AVAudioFormat   // 16kHz mono float32 — for OnDeviceSTT
     private let ttsFormat: AVAudioFormat       // 24kHz mono float32 — Kokoro PCM playback
     /// Written on main (start/unmute/route-rebuild), read on the render
@@ -1536,8 +1542,29 @@ final class OnDeviceConversationSession: NSObject {
         } else {
             bufferToSchedule = inBuffer
         }
-        if !playerNode.isPlaying { playerNode.play() }
         playerNode.scheduleBuffer(bufferToSchedule, completionHandler: nil)
+        // 0.2.59 jitter buffer: queue ~220ms before starting the render clock
+        // (350ms wall-clock failsafe so short replies still speak promptly).
+        if !playerNode.isPlaying {
+            let dur = Double(bufferToSchedule.frameLength) / bufferToSchedule.format.sampleRate
+            let now = CFAbsoluteTimeGetCurrent()
+            if ttsPrebufferDeadline == 0 {
+                ttsPrebufferDeadline = now + 0.35
+                ttsPrebufferedSec = 0
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.36) { [weak self] in
+                    guard let self = self else { return }
+                    if !self.playerNode.isPlaying, self.ttsPrebufferDeadline != 0 {
+                        self.playerNode.play()
+                        self.ttsPrebufferDeadline = 0
+                    }
+                }
+            }
+            ttsPrebufferedSec += dur
+            if ttsPrebufferedSec >= 0.22 || now >= ttsPrebufferDeadline {
+                playerNode.play()
+                ttsPrebufferDeadline = 0
+            }
+        }
     }
 
     // MARK: - Helpers
