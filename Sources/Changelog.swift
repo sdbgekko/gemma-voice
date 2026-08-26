@@ -12,6 +12,14 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.60",
+            date: "Aug 26",
+            hints: [
+                "No more endless 'Working…' when the connection is dead: the app now checks it can actually reach home before sending your turn, and if it can't (usually Tailscale/VPN dropped in the background) it tells you within ~4 seconds with the reason — instead of spinning for half an hour while your words go nowhere.",
+                "Server-side today: the real S-sound fix (the voice engine itself was appending a hiss to short sentences — now detected and trimmed before audio leaves the house, along with its 'test-UH' cousin), and a busy-ack: if Gemma's brain is mid-task, you hear 'give me a moment' within ~10s and your turn answers automatically when she frees up, instead of dying silently.",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.59",
             date: "Aug 26",
             hints: [

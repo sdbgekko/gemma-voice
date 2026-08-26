@@ -1027,10 +1027,38 @@ final class OnDeviceConversationSession: NSObject {
         }
     }
 
+    /// 0.2.60 honest connectivity: probe GET /health with a hard 4s cap.
+    /// A dead Tailscale tunnel black-holes the turn's POST without failing it,
+    /// which left the card on "Working…" for half an hour on 8/26 while three
+    /// turns silently died. Sub-5s honest verdict beats a minutes-long lie.
+    private static func homeReachable() async -> Bool {
+        var req = URLRequest(url: GemmaVoiceServer.httpBase.appendingPathComponent("health"))
+        req.timeoutInterval = 4
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.timeoutIntervalForRequest = 4
+        cfg.timeoutIntervalForResource = 5
+        let probe = URLSession(configuration: cfg)
+        do {
+            let (_, resp) = try await probe.data(for: req)
+            return (resp as? HTTPURLResponse)?.statusCode == 200
+        } catch {
+            return false
+        }
+    }
+
     /// POST the (possibly merged) turn text and stream the reply audio. Bails
     /// silently if a continuation cancelled it mid-flight — the merged re-send
     /// now owns the turn.
     private func performRequest(_ text: String) async {
+        // 0.2.60: fail fast when home is unreachable — clear reason on the
+        // card instead of an indefinite "Working…" on a black-holed connect.
+        if !(await Self.homeReachable()) {
+            if Task.isCancelled { return }
+            finishTurn()
+            self.onEvent?(.dropped("Can't reach home — check Tailscale/VPN, then try again"))
+            return
+        }
+        if Task.isCancelled { return }
         // Build the speaker-verification WAV from the open turn's audio at
         // send time — a merged re-send therefore carries both fragments.
         let wavBase64 = Self.speakerClipBase64(fromPCM: pendingTurnAudio)
