@@ -18,6 +18,10 @@ struct ContentView: View {
     /// so the picker now presents via this flag instead of a bare PhotosPicker.
     @State private var showPhotoPicker = false
     @State private var glancePulse = false   // 0.2.57: drives the status-orb breathing
+    /// 0.2.61 What's New: shown once per new version, with the mic gated while
+    /// it's up (a cough was firing turns underneath the update screen).
+    @AppStorage("lastSeenWhatsNewVersion") private var lastSeenWhatsNewVersion: String = ""
+    @State private var showWhatsNew = false
 
     private var preferredScheme: ColorScheme? {
         switch appearance {
@@ -38,13 +42,34 @@ struct ContentView: View {
         }
         .background(Color(.systemBackground).ignoresSafeArea())
         .preferredColorScheme(preferredScheme)
-        .onAppear { viewModel.requestMicPermission() }
+        .onAppear {
+            viewModel.requestMicPermission()
+            // 0.2.61: first launch of a new version → show What's New, mic
+            // gated. Stored version updates only on dismiss so an early kill
+            // re-presents it.
+            let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+            if !current.isEmpty, current != lastSeenWhatsNewVersion,
+               let _ = Changelog.entries.first {
+                showWhatsNew = true
+            }
+        }
         .sheet(isPresented: $showSettings) {
             // Explicit injection: the enrollment flow inside Settings needs the
             // view model to pause/resume the live session, and sheets don't
             // reliably inherit environment objects across all iOS versions.
             SettingsView(appearance: $appearance)
                 .environmentObject(viewModel)
+        }
+        .sheet(isPresented: $showWhatsNew, onDismiss: {
+            // Swipe-dismiss and button both land here: restore the mic and
+            // remember this version so the sheet shows once per update.
+            lastSeenWhatsNewVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? lastSeenWhatsNewVersion
+            viewModel.overlayDismissed()
+        }) {
+            if let entry = Changelog.entries.first {
+                WhatsNewSheet(entry: entry, onDismiss: { showWhatsNew = false })
+                    .onAppear { viewModel.overlayAppeared() }
+            }
         }
     }
 

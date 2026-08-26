@@ -1163,8 +1163,15 @@ final class OnDeviceConversationSession: NSObject {
     /// a 2-minute bound). The existing fetchLateReply still runs after audio as
     /// the transcript-row/backfill step — its ledger backfill no-ops harmlessly
     /// when partials already filled the card.
+    /// 0.2.61: rid of the last turn whose text never reached final — the
+    /// connection died mid-poll and the card is stuck on a partial (Sherman's
+    /// 8/26 screenshot: audio complete, card missing the last sentence).
+    /// Foregrounding calls refetchStaleReplyText() to heal it.
+    private(set) var staleReplyRid: String?
+
     private func startLiveReplyPoll(rid: String) {
         liveReplyPollTask?.cancel()
+        staleReplyRid = rid   // assume stale until the server says final
         liveReplyPollTask = Task { [weak self] in
             var lastEmitted = ""
             for _ in 0..<170 {   // ~2 min bound at 700ms spacing
@@ -1176,10 +1183,22 @@ final class OnDeviceConversationSession: NSObject {
                     lastEmitted = text
                     self.onEvent?(.replyTextPartial(text))
                 }
-                if state.final, state.reply?.isEmpty == false { return }
+                if state.final, state.reply?.isEmpty == false {
+                    self.staleReplyRid = nil   // card has the complete text
+                    return
+                }
                 try? await Task.sleep(nanoseconds: 700_000_000)
             }
         }
+    }
+
+    /// 0.2.61: one-shot heal for a card whose text never reached final —
+    /// re-fetch the (now long-since stored) reply and backfill via the same
+    /// .replyTextLate path. Called on foreground; no-ops when nothing is stale.
+    func refetchStaleReplyText() {
+        guard let rid = staleReplyRid else { return }
+        staleReplyRid = nil
+        fetchLateReply(rid: rid)
     }
 
     private func fetchLateReply(rid: String) {

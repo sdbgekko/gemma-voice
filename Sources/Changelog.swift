@@ -12,6 +12,14 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.61",
+            date: "Aug 26",
+            hints: [
+                "This screen is new — What's New now lives in the app, shown once per update. And while it's open, the microphone is paused (see the orange mic icon): no more coughs or stray words firing turns underneath while you read. Dismiss it and listening resumes.",
+                "Fixed cards losing their last sentence: when the connection dropped right as a reply finished, the audio played fully but the on-screen text stayed truncated. The app now re-fetches the complete text when you come back to it.",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.60",
             date: "Aug 26",
             hints: [

@@ -191,6 +191,25 @@ final class StreamingViewModel: ObservableObject {
     /// self-test pins (see MuteSelfTest.swift). `stopCapture()`'s full teardown
     /// is reserved for background/terminate (teardownAudio) and enrollment —
     /// never wired here.
+    // ─── 0.2.61 overlay mic gating ───────────────────────────────────────
+    // While the What's New sheet (or any future blocking overlay) is up, the
+    // mic must not be hot — Sherman's 8/26 report: reading the update screen
+    // while a cough/stray word fired turns underneath it. User's own mute is
+    // never overridden: we only restore what WE muted.
+    private var mutedForOverlay = false
+
+    func overlayAppeared() {
+        guard !userMuted else { return }   // user's explicit mute wins
+        mutedForOverlay = true
+        toggleMute()
+    }
+
+    func overlayDismissed() {
+        guard mutedForOverlay else { return }
+        mutedForOverlay = false
+        if userMuted { toggleMute() }
+    }
+
     func toggleMute() {
         let action = MuteLogic.actionForToggle(
             currentlyMuted: userMuted,
@@ -688,6 +707,10 @@ final class StreamingViewModel: ObservableObject {
             // was lost while we were away, fetch it now.
             endKeepalive()
             recoverPendingTurnIfNeeded(trigger: "foreground")
+            // 0.2.61: heal any card whose reply text never reached final
+            // because the connection died mid-poll (audio played, text
+            // truncated). Cheap no-op when nothing is stale.
+            onDeviceSession?.refetchStaleReplyText()
             // 0.2.43: a pending Action-Button / Siri / gemmavoice://talk
             // activation overrides a sticky mute — the user explicitly asked
             // to talk, so clear mute and listen. Otherwise the normal resume.
