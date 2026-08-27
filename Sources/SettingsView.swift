@@ -6,6 +6,7 @@ struct SettingsView: View {
     @AppStorage("useOnDeviceSTT") private var useOnDeviceSTT: Bool = true
     @AppStorage("bargeInEnabled") private var bargeInEnabled: Bool = true
     @AppStorage("aecEnabled") private var aecEnabled: Bool = false
+    @AppStorage("gemmaCanInitiate") private var gemmaCanInitiate: Bool = true
     @State private var onDeviceAuthResult: String? = nil
     @State private var sttTestState: STTTestState = .idle
     @State private var sttTestPartial: String = ""
@@ -42,6 +43,12 @@ struct SettingsView: View {
                     Button("Test") {
                         EarbackTone.shared.play()
                     }
+                }
+                Section("Gemma-initiated conversations") {
+                    Toggle("Gemma can start a conversation", isOn: $gemmaCanInitiate)
+                    Text("When ON, Gemma can send you a notification with a Listen button when she has something. She never speaks out loud uninvited — silent switch, Focus, and Do Not Disturb apply, routine items badge quietly, and there's a daily cap. OFF stops all Gemma-initiated notifications.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 Section("Interaction") {
                     Toggle("Allow interrupting Gemma", isOn: $bargeInEnabled)

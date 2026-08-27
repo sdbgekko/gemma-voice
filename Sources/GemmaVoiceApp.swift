@@ -6,6 +6,8 @@ import WidgetKit
 struct GemmaVoiceApp: App {
     @StateObject private var viewModel = StreamingViewModel()
     @Environment(\.scenePhase) private var scenePhase
+    // 0.2.62: token callback for Gemma-initiated conversations (OutboundPush.swift)
+    @UIApplicationDelegateAdaptor(PushAppDelegate.self) private var pushDelegate
 
     init() {
         // v0.2.16: rename AppStorage("onDeviceSTTFallback") -> "useOnDeviceSTT".
@@ -73,9 +75,31 @@ struct GemmaVoiceApp: App {
                 // idle. An active conversation (unmuted-listening / turn in
                 // flight) is deliberately KEPT alive across backgrounding so
                 // the hands-free / locked-screen / car use still works.
+                // 0.2.62: push authorization + category registration for
+                // Gemma-initiated conversations. Runs after the scene is up
+                // (not in init) so registerForRemoteNotifications has a live
+                // UIApplication. Mic permission stays a separate, earlier ask.
+                .task {
+                    OutboundPushManager.shared.setup()
+                    OutboundPushManager.shared.startHeartbeats { [weak viewModel] in
+                        (viewModel?.status ?? .muted) != .muted
+                    }
+                }
                 .onChange(of: scenePhase) { _, newPhase in
                     LifecycleBeacon.notePhase(newPhase)
                     viewModel.handleScenePhase(newPhase)
+                    // 0.2.62: scene heartbeat feeds the server's context-mute
+                    // gates (no push while a live session is up, etc.).
+                    let phaseName: String
+                    switch newPhase {
+                    case .active: phaseName = "active"
+                    case .inactive: phaseName = "inactive"
+                    case .background: phaseName = "background"
+                    @unknown default: phaseName = "unknown"
+                    }
+                    OutboundPushManager.shared.heartbeat(
+                        scenePhase: phaseName,
+                        activeSession: viewModel.status != .muted)
                     // 0.2.44: refresh the home-screen widget's pipeline state
                     // whenever the app comes to the foreground — the 15-min
                     // timeline policy covers the rest of the day.
