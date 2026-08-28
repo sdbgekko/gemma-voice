@@ -29,6 +29,17 @@ final class LiveActivityController {
     private var lastAgentName: String = "Gemma"
     private var lastStatus: LiveActivityStatusCode = .listening
 
+    /// 0.2.64 island-ghost sweep: a force-quit gives the app no time to end
+    /// its Live Activity, so the system keeps drawing the island card for a
+    /// dead process (Sherman: "killing the app never truly kills it"). On
+    /// every launch, end ANY activity from a prior life immediately.
+    func sweepStrayActivities() {
+        guard #available(iOS 16.2, *) else { return }
+        for stray in Activity<GemmaVoiceActivityAttributes>.activities {
+            Task { await stray.end(nil, dismissalPolicy: .immediate) }
+        }
+    }
+
     /// Start a Live Activity. No-op if Live Activities are disabled,
     /// or if the iOS version doesn't support them.
     func start(agentName: String = "Gemma", initialStatus: LiveActivityStatusCode = .listening) {
@@ -53,7 +64,9 @@ final class LiveActivityController {
         do {
             self.activity = try Activity.request(
                 attributes: attrs,
-                content: .init(state: state, staleDate: nil),
+                // 0.2.64: start stale-dated like updates are — a card whose
+                // app dies before the first update should also go stale.
+                content: .init(state: state, staleDate: Date().addingTimeInterval(30)),
                 pushType: nil
             )
             NSLog("[LiveActivity] started for \(agentName) state=\(initialStatus.label)")

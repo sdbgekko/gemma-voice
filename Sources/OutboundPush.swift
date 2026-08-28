@@ -6,8 +6,8 @@
 //  with that doorbell:
 //    - push authorization + GEMMA_OUTBOUND category (Listen / Not now / Mute)
 //    - device-token registration and scene heartbeats (HMAC'd like /text_turn)
-//    - the LISTEN flow: fetch pending → let the normal session connect →
-//      ask the server to /say the frozen line → ack spoken
+//    - the LISTEN flow (0.2.64): fetch pending → show the message as a
+//      transcript card → play its WAV from /outbound/audio → ack spoken
 //
 //  SPEAK GATE (non-negotiable, Chief design §5.3): the ONLY code path that
 //  leads to Gemma's voice from an outbound intent is handleListen(), and
@@ -34,6 +34,8 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
                      didFinishLaunchingWithOptions launchOptions:
                         [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         UNUserNotificationCenter.current().delegate = OutboundPushManager.shared
+        // 0.2.64: clear any island ghost a force-quit left behind.
+        LiveActivityController.shared.sweepStrayActivities()
         return true
     }
 
@@ -54,6 +56,10 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
 
 final class OutboundPushManager: NSObject, UNUserNotificationCenterDelegate {
     static let shared = OutboundPushManager()
+
+    /// Set once at scene startup (GemmaVoiceApp.task). Weak: the manager is
+    /// a process-lifetime singleton, the view model belongs to the scene.
+    weak var viewModel: StreamingViewModel?
 
     static let categoryId = "GEMMA_OUTBOUND"
     private static let masterKey = "gemmaCanInitiate"       // Settings master switch
@@ -199,41 +205,51 @@ final class OutboundPushManager: NSObject, UNUserNotificationCenterDelegate {
                 UNUserNotificationCenter.current().setBadgeCount(0)
             }
             guard !intents.isEmpty else { return }   // expired/acked: speak nothing
-            // Give the foregrounded app a moment to bring the WS session up —
-            // the same machinery a normal app-open uses — then have the server
-            // speak into it. Two attempts, then leave the intent fetched (the
-            // sweeper will expire it; we never force audio).
-            self.sayPending(intents, attempt: 1)
+            self.playPending(intents)
         }.resume()
     }
 
-    private func sayPending(_ intents: [[String: Any]], attempt: Int) {
-        // 0.2.63: cold starts need longer — the WS session can take several
-        // seconds to connect after a notification launch. Three 4s attempts.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
-            let lines = intents.compactMap { $0["speak_text"] as? String }
-                .filter { !$0.isEmpty }
-            guard !lines.isEmpty else { return }
-            var req = URLRequest(url: TextTurnClient.defaultBase.appendingPathComponent("say"))
-            req.httpMethod = "POST"
-            req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-            let joined = lines.joined(separator: ". ")
-            req.httpBody = "text=\(joined.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? joined)"
-                .data(using: .utf8)
-            req.timeoutInterval = 15
-            URLSession.shared.dataTask(with: req) { [weak self] data, _, _ in
-                guard let self else { return }
-                let clients = ((try? JSONSerialization.jsonObject(with: data ?? Data())
-                                as? [String: Any])?["clients"] as? Int) ?? 0
-                if clients > 0 {
-                    for i in intents {
-                        if let id = i["id"] as? String {
-                            self.ack(intentId: id, status: "spoken",
-                                     source: i["source"] as? String)
-                        }
+    /// 0.2.64 delivery rebuild. The 0.2.62/63 path POSTed /say, which
+    /// broadcasts to WS clients — a session type this phone doesn't use
+    /// (connected_clients was 0 in every test), so the voice silently never
+    /// played and no card was ever shown. Now: the message becomes a visible
+    /// transcript card immediately, and the audio comes down as a WAV from
+    /// /outbound/audio, played through the app's own AudioPlayer. No session
+    /// dependency; still gated behind the Listen tap that got us here.
+    private let outboundPlayer = AudioPlayer()
+
+    private func playPending(_ intents: [[String: Any]]) {
+        guard let secret = VoiceAuthSecret.read() else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            for intent in intents {
+                if let text = intent["speak_text"] as? String, !text.isEmpty {
+                    self.viewModel?.showOutboundMessage(text)
+                }
+            }
+            // Play the first intent's audio (multiples are rare by design —
+            // the no-stack gate keeps one invite outstanding at a time).
+            guard let first = intents.first,
+                  let intentId = first["id"] as? String else { return }
+            var comps = URLComponents(
+                url: TextTurnClient.defaultBase.appendingPathComponent("outbound/audio"),
+                resolvingAgainstBaseURL: false)!
+            comps.queryItems = [URLQueryItem(name: "intent_id", value: intentId)]
+            var req = URLRequest(url: comps.url!)
+            req.setValue(TextTurnClient.hmacSHA256Hex(secret: secret, bodyBytes: Data()),
+                         forHTTPHeaderField: "X-Voice-Auth")
+            req.timeoutInterval = 30
+            URLSession.shared.dataTask(with: req) { [weak self] data, resp, _ in
+                guard let self, let data,
+                      (resp as? HTTPURLResponse)?.statusCode == 200 else { return }
+                DispatchQueue.main.async {
+                    do {
+                        try self.outboundPlayer.play(data: data)
+                        self.ack(intentId: intentId, status: "spoken",
+                                 source: first["source"] as? String)
+                    } catch {
+                        print("[outbound] playback failed: \(error)")
                     }
-                } else if attempt < 3 {
-                    self.sayPending(intents, attempt: attempt + 1)
                 }
             }.resume()
         }

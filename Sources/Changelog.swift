@@ -12,6 +12,15 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.64",
+            date: "Aug 28",
+            hints: [
+                "Gemma's initiated messages now actually arrive: tapping her notification shows the message as a card in the conversation AND plays her voice — the old path spoke into a channel this phone never uses, so it was silently mute. Found and fixed from this morning's shower testing.",
+                "Backgrounding the app mid-reply no longer cuts her off — audio playback now counts as an active conversation, as originally intended.",
+                "The Dynamic Island ghost is exorcised: force-quitting the app used to leave its island card lingering (iOS draws it, not the app). Cards now go stale on their own within 30 seconds and any leftover ghost is swept on next launch.",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.63",
             date: "Aug 28",
             hints: [

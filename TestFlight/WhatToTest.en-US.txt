@@ -1,5 +1,7 @@
-0.2.55 — Words-gated cut (no more cough false-triggers)
+0.2.64 — Gemma-initiated conversations: delivery rebuild + island ghost fix
 
-Talking over Gemma now only cuts her voice when you say actual WORDS. Loud sounds wake the recognizer; only a transcribed word fires the cut — so coughs, throat-clears, and bumps stand down silently (~1.5s window).
-
-Test (Echo cancellation ON): 1) Talk over her — voice cuts (may feel ~a quarter-second slower than before; that's the word confirmation). 2) Cough/clear your throat mid-reply — she should keep talking. 3) Normal conversation unchanged.
+Four fixes from this morning's live testing:
+1) Tapping Gemma's notification now shows her message as a card AND plays her voice (the old audio path was silently broken). Test: kill the app, have her send a nudge, tap the banner — expect card + voice within seconds of launch.
+2) Backgrounding mid-reply no longer cuts her voice — swipe to home while she's speaking; she should finish.
+3) Force-quit no longer leaves a ghost card in the Dynamic Island — it goes stale within ~30s, and any leftover is cleared on next launch.
+4) TestFlight test notes (this page) now update with every build.

@@ -81,6 +81,7 @@ struct GemmaVoiceApp: App {
                 // UIApplication. Mic permission stays a separate, earlier ask.
                 .task {
                     OutboundPushManager.shared.setup()
+                    OutboundPushManager.shared.viewModel = viewModel
                     OutboundPushManager.shared.startHeartbeats { [weak viewModel] in
                         (viewModel?.status ?? .muted) != .muted
                     }

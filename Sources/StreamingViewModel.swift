@@ -789,7 +789,12 @@ final class StreamingViewModel: ObservableObject {
     /// flight (awaiting the brain) or a reply is playing. Backgrounding while
     /// this is true must NOT tear the audio graph down, even if the mic is
     /// muted. 0.2.46 background-audio fix.
-    private var audioBusy: Bool { turnAwaitingReply }
+    // 0.2.64: the 0.2.46 comment promised "OR a reply is actively playing"
+    // but the implementation collapsed to turn-in-flight only — so a reply
+    // whose TEXT had rendered while its AUDIO was still speaking counted as
+    // not-busy, and backgrounding cut Gemma off mid-sentence (Sherman,
+    // 2026-08-28, killed at the word "update"). Playback now counts.
+    private var audioBusy: Bool { turnAwaitingReply || status == .playing }
 
     private func beginKeepalive() {
         guard keepaliveTaskID == .invalid else { return }
@@ -1205,6 +1210,13 @@ final class StreamingViewModel: ObservableObject {
             currentAgentName = name
             LiveActivityController.shared.updateAgentName(name)
         }
+    }
+
+    /// 0.2.64: Gemma-initiated messages become visible transcript cards.
+    /// Called (main thread) from OutboundPushManager after a Listen tap —
+    /// the card shows immediately; the audio arrives separately.
+    func showOutboundMessage(_ text: String) {
+        appendTurn(text: text, isGemma: true, source: "gemma-initiated")
     }
 
     private func appendTurn(text: String, isGemma: Bool, source: String?, speaker: String? = nil) {
