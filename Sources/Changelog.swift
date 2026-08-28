@@ -12,6 +12,14 @@ struct ChangelogEntry: Identifiable {
 enum Changelog {
     static let entries: [ChangelogEntry] = [
         ChangelogEntry(
+            version: "0.2.63",
+            date: "Aug 28",
+            hints: [
+                "Fixed the killed-app case for Gemma-initiated conversations: tapping her notification from a cold start now actually delivers her message instead of just opening the app. (The launch tap was arriving before the handler was ready — found in this morning's live test.)",
+                "Her voice also gets more patience on cold starts — up to twelve seconds for the session to come up before giving up quietly.",
+            ]
+        ),
+        ChangelogEntry(
             version: "0.2.62",
             date: "Aug 27",
             hints: [

@@ -24,6 +24,19 @@ import CryptoKit
 // MARK: - App delegate adaptor (token callback lives here)
 
 final class PushAppDelegate: NSObject, UIApplicationDelegate {
+    // 0.2.63 cold-start fix: when the app is LAUNCHED by a notification tap,
+    // iOS delivers the response to the center delegate during launch. Our
+    // delegate used to be set in SwiftUI .task — after launch — so the tap
+    // event was silently dropped and the app "just sat there listening"
+    // (Sherman's 2026-08-28 killed-app test). Registering here, before the
+    // launch response is delivered, is the documented fix.
+    func application(_ application: UIApplication,
+                     didFinishLaunchingWithOptions launchOptions:
+                        [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        UNUserNotificationCenter.current().delegate = OutboundPushManager.shared
+        return true
+    }
+
     func application(_ application: UIApplication,
                      didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         let hex = deviceToken.map { String(format: "%02x", $0) }.joined()
@@ -195,7 +208,9 @@ final class OutboundPushManager: NSObject, UNUserNotificationCenterDelegate {
     }
 
     private func sayPending(_ intents: [[String: Any]], attempt: Int) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + (attempt == 1 ? 2.0 : 3.0)) {
+        // 0.2.63: cold starts need longer — the WS session can take several
+        // seconds to connect after a notification launch. Three 4s attempts.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
             let lines = intents.compactMap { $0["speak_text"] as? String }
                 .filter { !$0.isEmpty }
             guard !lines.isEmpty else { return }
@@ -217,7 +232,7 @@ final class OutboundPushManager: NSObject, UNUserNotificationCenterDelegate {
                                      source: i["source"] as? String)
                         }
                     }
-                } else if attempt < 2 {
+                } else if attempt < 3 {
                     self.sayPending(intents, attempt: attempt + 1)
                 }
             }.resume()
